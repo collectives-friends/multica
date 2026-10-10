@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/multica-ai/multica/server/internal/service"
 	"html"
 	"net/http"
 	"net/url"
@@ -31,6 +32,7 @@ const (
 var errInvalidPluginSurfaceOrigin = errors.New("plugin surface origin must be an absolute HTTP(S) origin without a path")
 
 type pluginSurfaceLaunchClaims struct {
+	UserID         string `json:"user_id,omitempty"`
 	WorkspaceID    string `json:"workspace_id"`
 	InstallationID string `json:"installation_id"`
 	VersionID      string `json:"version_id"`
@@ -150,9 +152,6 @@ func (h *Handler) openPluginSurfaceToken(token string) (pluginSurfaceLaunchClaim
 // hosted URL plus the proof that exact document must present to the exact frame
 // which requested it.
 func (h *Handler) GetPluginSurfaceLaunch(w http.ResponseWriter, r *http.Request) {
-	if !h.requirePluginsV1(w, r) {
-		return
-	}
 	if strings.TrimSpace(h.cfg.PluginSurfaceOrigin) == "" || h.PluginSurfaceTokens == nil {
 		writeFeatureDisabled(w, "plugin_surfaces_not_configured", "Plugin surfaces are unavailable: MULTICA_PLUGIN_SURFACE_ORIGIN and MULTICA_PLUGIN_SECRET_KEY must be configured")
 		return
@@ -176,13 +175,13 @@ func (h *Handler) GetPluginSurfaceLaunch(w http.ResponseWriter, r *http.Request)
 		writePluginError(w, err, "failed to load the Plugin")
 		return
 	}
-	if !installation.Enabled {
-		writeError(w, http.StatusForbidden, "this Plugin is disabled")
-		return
-	}
 	script, err := h.PluginService.SurfaceScript(r.Context(), installation, chi.URLParam(r, "surfaceKey"))
 	if err != nil {
 		writePluginError(w, err, "failed to load the Plugin surface")
+		return
+	}
+	if !h.PluginService.SurfaceActive(r.Context(), installation, chi.URLParam(r, "surfaceKey"), r.Header.Get("X-User-ID")) {
+		writeErrorCode(w, http.StatusForbidden, service.PluginContributionDisabled, "This plugin contribution is disabled")
 		return
 	}
 	challenge, err := randomPluginSurfaceChallenge()
@@ -191,6 +190,7 @@ func (h *Handler) GetPluginSurfaceLaunch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	claims := pluginSurfaceLaunchClaims{
+		UserID:         r.Header.Get("X-User-ID"),
 		WorkspaceID:    util.UUIDToString(workspaceID),
 		InstallationID: util.UUIDToString(installation.ID),
 		VersionID:      util.UUIDToString(installation.PackageVersionID),
@@ -241,8 +241,12 @@ func (h *Handler) ServePluginSurface(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	installation, err := h.PluginService.InstallationForWorkspace(r.Context(), workspaceID, claims.InstallationID)
-	if err != nil || !installation.Enabled || util.UUIDToString(installation.PackageVersionID) != claims.VersionID {
+	if err != nil || util.UUIDToString(installation.PackageVersionID) != claims.VersionID {
 		http.NotFound(w, r)
+		return
+	}
+	if !h.PluginService.SurfaceActive(r.Context(), installation, claims.SurfaceKey, claims.UserID) {
+		writeErrorCode(w, http.StatusForbidden, service.PluginContributionDisabled, "This plugin contribution is disabled")
 		return
 	}
 	script, err := h.PluginService.SurfaceScript(r.Context(), installation, claims.SurfaceKey)

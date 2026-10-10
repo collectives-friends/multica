@@ -46,11 +46,12 @@ type percentConfig struct {
 // fields that the YAML omitted.
 func (rc ruleConfig) toRule() Rule {
 	r := Rule{
-		Variant: rc.Variant,
-		Allow:   rc.Allow,
-		AllowBy: rc.AllowBy,
-		Deny:    rc.Deny,
-		DenyBy:  rc.DenyBy,
+		DefaultUnset: rc.Default == nil,
+		Variant:      rc.Variant,
+		Allow:        rc.Allow,
+		AllowBy:      rc.AllowBy,
+		Deny:         rc.Deny,
+		DenyBy:       rc.DenyBy,
 	}
 	if rc.Default != nil {
 		r.Default = *rc.Default

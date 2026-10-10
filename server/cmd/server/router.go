@@ -81,6 +81,7 @@ var corsAllowedHeaders = []string{
 	"X-Client-Capabilities",
 	// Sent by the host page when it relays a plugin surface's Action API call.
 	"X-Multica-Plugin-Installation",
+	"X-Multica-Plugin-Surface",
 }
 
 // corsExposedHeaders lists response headers browser clients are allowed to read.
@@ -453,6 +454,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	h.InvitationRateLimiters = handler.NewMemoryInvitationRateLimiters(invitationRateLimits)
 	h.Metrics = opts.BusinessMetrics
 	h.FeatureFlags = opts.FeatureFlags
+	h.FlagResolver = featureflags.NewResolver(featureflags.HostRegistry(), opts.FeatureFlags, featureflags.DBSource{Queries: queries, PluginDefinitions: func(ctx context.Context, workspaceID string) ([]featureflags.Definition, error) {
+		return service.PluginFlagDefinitions(ctx, queries, workspaceID)
+	}})
+	h.TaskService.FlagResolver = h.FlagResolver
 	h.TaskService.FeatureFlags = opts.FeatureFlags
 	h.TaskService.Metrics = opts.BusinessMetrics
 	h.IssueService.Metrics = opts.BusinessMetrics
@@ -1250,43 +1255,39 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// a toolkit is a dashboard action, not a redeploy. State signing uses
 	// COMPOSIO_STATE_SECRET, or a key derived from JWT_SECRET when that is unset.
 	if composioAPIKey := strings.TrimSpace(os.Getenv("COMPOSIO_API_KEY")); composioAPIKey != "" {
-		if !featureflags.ComposioMCPAppsEnabled(context.Background(), opts.FeatureFlags) {
-			slog.Info("composio integration disabled (feature flag off)")
+		sdkClient, err := composiosdk.NewClient(composiosdk.Options{APIKey: composioAPIKey})
+		if err != nil {
+			slog.Error("composio: SDK client init failed; composio integration disabled", "error", err)
 		} else {
-			sdkClient, err := composiosdk.NewClient(composiosdk.Options{APIKey: composioAPIKey})
-			if err != nil {
-				slog.Error("composio: SDK client init failed; composio integration disabled", "error", err)
-			} else {
-				stateSecret := composioStateSecret()
-				callbackBase := composioCallbackBaseURL(signupConfig.PublicURL)
-				switch {
-				case len(stateSecret) == 0:
-					slog.Error("composio: no state secret (set COMPOSIO_STATE_SECRET or JWT_SECRET); composio integration disabled")
-				case callbackBase == "":
-					slog.Error("composio: no callback base url (set COMPOSIO_CALLBACK_BASE_URL or MULTICA_PUBLIC_URL); composio integration disabled")
-				default:
-					svc, serr := composiointeg.NewService(sdkClient, queries, composiointeg.Config{
-						StateSecret:     stateSecret,
-						CallbackBaseURL: callbackBase,
-						FrontendBaseURL: appURLFromEnv(),
-					})
-					if serr != nil {
-						slog.Error("composio: service init failed; composio integration disabled", "error", serr)
-					} else {
-						h.Composio = svc
-						// Stage 3 (MUL-3721) hook: feed the per-task MCP
-						// overlay builder into TaskService so every Enqueue*
-						// path attaches the initiator user's Composio session
-						// URL to the task row before the daemon claims it.
-						// taskSvc already exists by this point — it was
-						// constructed inside NewHandler — and exposes its
-						// Composio field for exactly this kind of late wiring,
-						// so no Handler-level mutation is needed.
-						if h.TaskService != nil {
-							h.TaskService.Composio = svc
-						}
-						slog.Info("composio integration enabled")
+			stateSecret := composioStateSecret()
+			callbackBase := composioCallbackBaseURL(signupConfig.PublicURL)
+			switch {
+			case len(stateSecret) == 0:
+				slog.Error("composio: no state secret (set COMPOSIO_STATE_SECRET or JWT_SECRET); composio integration disabled")
+			case callbackBase == "":
+				slog.Error("composio: no callback base url (set COMPOSIO_CALLBACK_BASE_URL or MULTICA_PUBLIC_URL); composio integration disabled")
+			default:
+				svc, serr := composiointeg.NewService(sdkClient, queries, composiointeg.Config{
+					StateSecret:     stateSecret,
+					CallbackBaseURL: callbackBase,
+					FrontendBaseURL: appURLFromEnv(),
+				})
+				if serr != nil {
+					slog.Error("composio: service init failed; composio integration disabled", "error", serr)
+				} else {
+					h.Composio = svc
+					// Stage 3 (MUL-3721) hook: feed the per-task MCP
+					// overlay builder into TaskService so every Enqueue*
+					// path attaches the initiator user's Composio session
+					// URL to the task row before the daemon claims it.
+					// taskSvc already exists by this point — it was
+					// constructed inside NewHandler — and exposes its
+					// Composio field for exactly this kind of late wiring,
+					// so no Handler-level mutation is needed.
+					if h.TaskService != nil {
+						h.TaskService.Composio = svc
 					}
+					slog.Info("composio integration enabled")
 				}
 			}
 		}
@@ -1354,6 +1355,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// The flag reaches the event path only through the service: a worker has
 		// no request to read it from.
 		h.PluginService.FeatureFlags = h.FeatureFlags
+		h.PluginService.FlagResolver = h.FlagResolver
 		pluginEvents := service.NewPluginEventDispatcher(h.PluginService)
 		service.SubscribePluginEvents(bus, pluginEvents)
 	}
@@ -1699,6 +1701,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// Member-level access
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
+					r.Use(h.PrepareFeatureFlags)
 					r.Get("/", h.GetWorkspace)
 					r.Get("/members", h.ListMembersWithUser)
 					r.Post("/leave", h.LeaveWorkspace)
@@ -1725,6 +1728,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// Installed Plugins are member-visible so a member can
 					// see what is mounted in their workspace and which scopes
 					// it holds; install / configure / remove stay admin-only.
+					r.Get("/feature-flags", h.GetFeatureFlags)
+					r.Get("/feature-flags/", h.GetFeatureFlags)
+					r.Get("/feature-flags/audit", h.GetFeatureFlagAudit)
+					r.Put("/feature-flags/{key}", h.SetMemberFeatureFlag)
+					r.Delete("/feature-flags/{key}", h.DeleteMemberFeatureFlag)
+					r.Put("/feature-flags/{key}/workspace", h.SetWorkspaceFeatureFlag)
+					r.Delete("/feature-flags/{key}/workspace", h.DeleteWorkspaceFeatureFlag)
 					r.Get("/plugins", h.ListPlugins)
 					// One short-lived hosted surface launch. Member-visible
 					// because opening an issue is what asks for it; executable
@@ -1818,6 +1828,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				//     initiator or an admin) before doing anything.
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
+					r.Use(h.PrepareFeatureFlags)
 					r.Get("/lark/installations", h.ListLarkInstallations)
 					r.Delete("/lark/installations/{installationId}", h.RevokeLarkInstallation)
 					// Device-flow scan-to-install. Begin opens a new
@@ -1836,6 +1847,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// and is registered outside this workspace group.
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
+					r.Use(h.PrepareFeatureFlags)
 					r.Get("/slack/installations", h.ListSlackInstallations)
 					r.Get("/wecom/installations", h.ListWecomInstallations)
 				})
@@ -1849,6 +1861,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
+					r.Use(h.PrepareFeatureFlags)
 					r.Get("/dingtalk/installations", h.ListDingTalkInstallations)
 					r.Get("/dingtalk/groups", h.ListDingTalkGroups)
 					r.Delete("/dingtalk/installations/{installationId}/groups/{conversationId}", h.ForgetDingTalkGroup)
@@ -1860,6 +1873,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// listing is member-visible; install + revoke are admin-only.
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
+					r.Use(h.PrepareFeatureFlags)
 					r.Get("/telegram/installations", h.ListTelegramInstallations)
 				})
 				r.Group(func(r chi.Router) {
@@ -1895,12 +1909,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// "this Telegram user id requested binding".
 		r.Post("/api/telegram/binding/redeem", h.RedeemTelegramBindingToken)
 
-		// Composio integration (MUL-3720). User-scoped (no workspace context):
-		// a connection belongs to a user. These four require a logged-in
+		// Composio integration (MUL-3720). Connections remain user-owned;
+		// a verified workspace selection controls availability. These four require a logged-in
 		// session; the OAuth callback is the outlier and lives outside the Auth
 		// group (registered above with the other public OAuth/webhook routes —
-		// see MUL-3843). All return 503 when COMPOSIO_API_KEY is unset.
+		// see MUL-3843). All return 403 when COMPOSIO_API_KEY is unset.
 		r.Route("/api/integrations/composio", func(r chi.Router) {
+			r.Use(h.PrepareComposioWorkspace)
 			r.Post("/connect/init", h.ComposioConnectInit)
 			r.Get("/toolkits", h.ListComposioToolkits)
 			r.Get("/connections", h.ListComposioConnections)
@@ -1969,6 +1984,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Use(handler.RequireHumanActor)
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceMember(queries))
+				r.Use(h.PrepareFeatureFlags)
 				r.Get("/summary", h.GetCloudWorkspaceSubscriptionSummary)
 				r.Get("/prices", h.GetCloudWorkspaceSubscriptionPrices)
 			})
@@ -1985,6 +2001,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// --- Workspace-scoped routes (all require workspace membership) ---
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireWorkspaceMember(queries))
+			r.Use(h.PrepareFeatureFlags)
 
 			// Assignee frequency
 			r.Get("/api/assignee-frequency", h.GetAssigneeFrequency)

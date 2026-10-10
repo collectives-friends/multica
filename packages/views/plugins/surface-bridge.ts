@@ -1,3 +1,4 @@
+import { parsePluginContextFlags } from "@multica/core/feature-flags";
 import { api } from "@multica/core/api";
 
 /**
@@ -59,6 +60,7 @@ function isBridgeRequest(value: unknown): value is BridgeRequest {
 
 export interface SurfaceBridgeOptions {
   installationId: string;
+  surfaceKey?: string;
   /** Single-use proof returned with this exact hosted document URL. */
   bridgeToken: string;
   /** Mounted-on issue, forwarded to /context so the surface knows where it is. */
@@ -75,6 +77,7 @@ export interface SurfaceBridge {
   connect(frame: HTMLIFrameElement, theme: Record<string, string>): void;
   /** Pushes a theme change to an already-connected frame. */
   pushTheme(theme: Record<string, string>): void;
+  refreshFlags(): Promise<void>;
   close(): void;
 }
 
@@ -82,6 +85,7 @@ export function createSurfaceBridge(options: SurfaceBridgeOptions): SurfaceBridg
   let port: MessagePort | null = null;
   let closed = false;
   let connected = false;
+  let flagsGeneration = 0;
   const connectListeners: Array<(event: MessageEvent) => void> = [];
 
   const handle = async (request: BridgeRequest, port: MessagePort) => {
@@ -103,6 +107,7 @@ export function createSurfaceBridge(options: SurfaceBridgeOptions): SurfaceBridg
         path: request.path,
         body: request.body,
         issueId: options.issueId,
+        surfaceKey: options.surfaceKey,
       });
       port.postMessage({ id: request.id, ok: true, status: 200, data: result });
     } catch (error) {
@@ -142,6 +147,26 @@ export function createSurfaceBridge(options: SurfaceBridgeOptions): SurfaceBridg
     },
     pushTheme(theme) {
       port?.postMessage({ kind: "theme", theme });
+    },
+    async refreshFlags() {
+      if (closed || !port) return;
+      const generation = ++flagsGeneration;
+      try {
+        const raw = await api.callPluginAction(options.installationId, {
+          method: "GET",
+          path: "/context",
+          issueId: options.issueId,
+          ...(options.surfaceKey ? { surfaceKey: options.surfaceKey } : {}),
+        });
+        const context = parsePluginContextFlags(raw);
+        if (!closed && generation === flagsGeneration) {
+          port?.postMessage({ kind: "flags", flags: context.flags });
+        }
+      } catch {
+        if (!closed && generation === flagsGeneration) {
+          port?.postMessage({ kind: "flags", flags: {} });
+        }
+      }
     },
     close() {
       closed = true;

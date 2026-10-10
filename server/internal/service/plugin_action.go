@@ -60,8 +60,8 @@ func (s *PluginService) AuthorizePluginAction(ctx context.Context, installationI
 	}
 	// A disabled plugin is off, not merely hidden: an iframe left open in a
 	// stale tab must not keep working after an admin disables it.
-	if !installation.Enabled {
-		return PluginActionCaller{}, pluginErrf(PluginErrorForbidden, "this Plugin is disabled")
+	if !s.ContributionActive(ctx, installation, "", uuidString(userID)) {
+		return PluginActionCaller{}, pluginErrf(PluginErrorContributionDisabled, PluginContributionDisabled)
 	}
 
 	scopes := decodeScopes(installation.GrantedScopes)
@@ -102,6 +102,7 @@ func parseInstallationID(value string) (pgtype.UUID, error) {
 // because it contains nothing the user in front of the iframe cannot already
 // see on the page around it.
 type PluginContext struct {
+	Flags     map[string]bool        `json:"flags"`
 	Workspace PluginContextWorkspace `json:"workspace"`
 	// User is absent when the caller is the plugin itself — an event hook or a
 	// standing install token has no person behind it, and inventing one here
@@ -137,13 +138,18 @@ type PluginContextIssue struct {
 // BuildPluginContext assembles the context payload. Config carries only the
 // non-secret installation values — secrets live in their own table and have no
 // read path, so there is no way for one to reach the iframe.
-func (s *PluginService) BuildPluginContext(caller PluginActionCaller, workspace db.Workspace, user *db.User, issue *db.Issue) PluginContext {
+func (s *PluginService) BuildPluginContext(caller PluginActionCaller, workspace db.Workspace, user *db.User, issue *db.Issue, contexts ...context.Context) PluginContext {
+	ctx := context.Background()
+	if len(contexts) > 0 {
+		ctx = contexts[0]
+	}
 	config := map[string]any{}
 	if len(caller.Installation.Config) > 0 {
 		_ = json.Unmarshal(caller.Installation.Config, &config)
 	}
 
 	payload := PluginContext{
+		Flags: s.ContributionFlags(ctx, caller.Installation, uuidString(caller.UserID)),
 		Workspace: PluginContextWorkspace{
 			ID:   uuidString(workspace.ID),
 			Name: workspace.Name,

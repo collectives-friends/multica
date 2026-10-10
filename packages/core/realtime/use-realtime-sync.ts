@@ -10,6 +10,7 @@ import { createLogger } from "../logger";
 import { clearWorkspaceStorage } from "../platform/storage-cleanup";
 import { defaultStorage } from "../platform/storage";
 import { getCurrentWsId, getCurrentSlug } from "../platform/workspace-storage";
+import { refreshFeatureFlags } from "../feature-flags/queries";
 import { issueKeys } from "../issues/queries";
 import { projectKeys } from "../projects/queries";
 import { pinKeys } from "../pins/queries";
@@ -644,6 +645,7 @@ export async function handleInboxNew(
 function invalidateWorkspaceScopedQueries(qc: QueryClient): void {
   const wsId = getCurrentWsId();
   if (wsId) {
+    void refreshFeatureFlags(qc, wsId);
     qc.invalidateQueries({ queryKey: issueKeys.all(wsId) });
     // Through the inbox's own entry point, not a plain invalidate: a reconnect
     // can land during the list's first load, and a plain invalidate would be
@@ -1058,6 +1060,14 @@ export function useRealtimeSync(
     ]);
 
     const unsubAny = ws.onAny((msg) => {
+      if (msg.type === "feature_flag:changed" || msg.type.startsWith("plugin")) {
+        const payload = msg.payload as {workspace_id?: string};
+        const wsId = payload?.workspace_id ?? getCurrentWsId();
+        if (wsId) {
+          // Re-fetch the full graph: a host/parent flag can affect every plugin.
+          void refreshFeatureFlags(qc, wsId);
+        }
+      }
       if (specificEvents.has(msg.type)) return;
       const prefix = msg.type.split(":")[0] ?? "";
       if (prefix === "agent" || (prefix === "task" && msg.type !== "task:progress")) {

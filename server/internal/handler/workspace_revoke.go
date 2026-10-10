@@ -65,6 +65,13 @@ func (h *Handler) revokeAndRemoveMember(ctx context.Context, workspaceID, userID
 		return empty, err
 	}
 
+	if err := qtx.LockWorkspaceFlagWrites(ctx, uuidToString(workspaceID)); err != nil {
+		return empty, err
+	}
+	if err := qtx.DeleteMemberFlagOverrides(ctx, db.DeleteMemberFlagOverridesParams{WorkspaceID: workspaceID, ScopeID: userID}); err != nil {
+		return empty, err
+	}
+
 	runtimes, err := qtx.ListAgentRuntimesByOwner(ctx, db.ListAgentRuntimesByOwnerParams{
 		WorkspaceID: workspaceID,
 		OwnerID:     userID,
@@ -228,6 +235,9 @@ func (h *Handler) revokeAndRemoveMember(ctx context.Context, workspaceID, userID
 		return empty, err
 	}
 
+	if h.FlagResolver != nil {
+		h.FlagResolver.Invalidate(uuidToString(workspaceID))
+	}
 	return result, nil
 }
 

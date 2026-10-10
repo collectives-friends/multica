@@ -114,16 +114,17 @@ type HookInvocation struct {
 // handler written against v1 should not have to care what else the host learns
 // how to send later.
 type hookRequestBody struct {
-	Version      int       `json:"version"`
-	InvocationID string    `json:"invocation_id"`
-	DeliveryID   string    `json:"delivery_id,omitempty"`
-	Attempt      int       `json:"attempt"`
-	OccurredAt   time.Time `json:"occurred_at"`
-	HookKey      string    `json:"hook_key"`
-	Trigger      string    `json:"trigger"`
-	EventType    string    `json:"event_type,omitempty"`
-	WorkspaceID  string    `json:"workspace_id"`
-	Installation string    `json:"installation_id"`
+	Flags        map[string]bool `json:"flags"`
+	Version      int             `json:"version"`
+	InvocationID string          `json:"invocation_id"`
+	DeliveryID   string          `json:"delivery_id,omitempty"`
+	Attempt      int             `json:"attempt"`
+	OccurredAt   time.Time       `json:"occurred_at"`
+	HookKey      string          `json:"hook_key"`
+	Trigger      string          `json:"trigger"`
+	EventType    string          `json:"event_type,omitempty"`
+	WorkspaceID  string          `json:"workspace_id"`
+	Installation string          `json:"installation_id"`
 	// IssueID is the issue this call is about, as resolved and permission-checked
 	// by the host. Sent because the alternative is every handler reading it out
 	// of client-supplied `input` — unvalidated, and absent entirely for the event
@@ -202,11 +203,29 @@ func (s *PluginService) InvokeHook(ctx context.Context, invocation HookInvocatio
 		attempt = 1
 	}
 	invocation.Attempt = attempt
+	// Retry and delayed delivery must use the current consented installation.
+	if s.Queries != nil {
+		current, err := s.Queries.GetPluginInstallation(ctx, invocation.Installation.ID)
+		if err != nil {
+			return HookResult{Status: "refused", Error: "flag_off"}, pluginErrf(PluginErrorContributionDisabled, PluginContributionDisabled)
+		}
+		hook, err := FindHook(current, invocation.Hook.Key)
+		if err != nil {
+			return HookResult{Status: "refused", Error: "flag_off"}, err
+		}
+		invocation.Installation = current
+		invocation.Hook = hook
+	}
 	hook := invocation.Hook
 	result := HookResult{HookKey: hook.Key, Trigger: invocation.Trigger, Attempts: attempt}
 
-	if !invocation.Installation.Enabled {
-		return result, pluginErrf(PluginErrorForbidden, "this Plugin is disabled")
+	var gateErr error
+	ctx, gateErr = s.RequireContributionFresh(ctx, invocation.Installation, hook.RequiresFlag, hookUserID(invocation))
+	if gateErr != nil {
+		result.Status = "refused"
+		result.Error = "flag_off"
+		s.recordInvocation(ctx, invocation, "refused", attempt, 0, "flag_off")
+		return result, gateErr
 	}
 	if !HookAllowsTrigger(hook, invocation.Trigger) {
 		return result, pluginErrf(PluginErrorForbidden, "hook %q does not declare the %s trigger", hook.Key, invocation.Trigger)
@@ -404,6 +423,7 @@ func (s *PluginService) buildHookBody(ctx context.Context, invocation HookInvoca
 	if invocation.IssueID.Valid {
 		body.IssueID = uuidString(invocation.IssueID)
 	}
+	body.Flags = s.ContributionFlags(ctx, invocation.Installation, hookUserID(invocation))
 	body.Config = nonSecretConfig(invocation.Installation)
 	if invocation.Input != nil {
 		encoded, err := json.Marshal(invocation.Input)
@@ -541,6 +561,9 @@ func (s *PluginService) HookBreakerOpen(ctx context.Context, installationID pgty
 }
 
 func (s *PluginService) recordInvocation(ctx context.Context, invocation HookInvocation, status string, attempt, latency int, message string) {
+	if s.Queries == nil {
+		return
+	}
 	params := db.CreatePluginInvocationParams{
 		ID:             invocation.ID,
 		InstallationID: invocation.Installation.ID,
@@ -571,7 +594,7 @@ func hookFailureStatus(err error) string {
 	var pluginErr *PluginError
 	if errors.As(err, &pluginErr) {
 		switch pluginErr.Kind {
-		case PluginErrorForbidden, PluginErrorQuota, PluginErrorIncompatible:
+		case PluginErrorForbidden, PluginErrorQuota, PluginErrorIncompatible, PluginErrorContributionDisabled:
 			return "refused"
 		}
 	}

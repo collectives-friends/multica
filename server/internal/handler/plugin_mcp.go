@@ -36,7 +36,7 @@ func (h *Handler) ListPluginMCPTools(w http.ResponseWriter, r *http.Request) {
 	}
 	hookKey := chi.URLParam(r, "hookKey")
 
-	discovered, err := h.PluginService.DiscoverMCPHookTools(r.Context(), installation, hookKey)
+	discovered, err := h.PluginService.DiscoverMCPHookTools(pluginRequestContext(r, uuidToString(installation.WorkspaceID), r.Header.Get("X-User-ID")), installation, hookKey)
 	if err != nil {
 		writePluginError(w, err, "failed to reach the Plugin's MCP server")
 		return
@@ -86,12 +86,12 @@ func (h *Handler) ApprovePluginMCPTools(w http.ResponseWriter, r *http.Request) 
 	}
 
 	updated, err := h.PluginService.ApproveMCPHookTools(
-		r.Context(), installation, chi.URLParam(r, "hookKey"), req.Tools, parsedUserID)
+		pluginRequestContext(r, uuidToString(installation.WorkspaceID), r.Header.Get("X-User-ID")), installation, chi.URLParam(r, "hookKey"), req.Tools, parsedUserID)
 	if err != nil {
 		writePluginError(w, err, "failed to approve the MCP tools")
 		return
 	}
-	payload, err := h.pluginInstallationPayload(r.Context(), updated)
+	payload, err := h.pluginInstallationPayload(pluginRequestContext(r, uuidToString(updated.WorkspaceID), r.Header.Get("X-User-ID")), updated)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load the Plugin")
 		return
@@ -128,9 +128,6 @@ func splitPluginContributionID(contribution string) (string, string, bool) {
 // Authenticated as the daemon and scoped to a claimed task, like every other
 // /api/daemon route.
 func (h *Handler) ResolvePluginMCPCredential(w http.ResponseWriter, r *http.Request) {
-	if !h.requirePluginsV1(w, r) {
-		return
-	}
 	_, workspaceID, ok := h.requireDaemonTaskAccessWithWorkspace(w, r, chi.URLParam(r, "id"))
 	if !ok {
 		return
@@ -147,7 +144,7 @@ func (h *Handler) ResolvePluginMCPCredential(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	header, credential, err := h.PluginService.MCPHookCredential(r.Context(), installation, hookKey)
+	header, credential, err := h.PluginService.MCPHookCredential(pluginRequestContext(r, uuidToString(installation.WorkspaceID), ""), installation, hookKey)
 	if err != nil {
 		writePluginError(w, err, "failed to resolve the credential")
 		return

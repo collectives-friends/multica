@@ -103,7 +103,7 @@ func (s *PluginService) AgentHookTools(ctx context.Context, workspaceID pgtype.U
 			continue
 		}
 		for _, hook := range manifest.Contributes.Hooks {
-			if !HookAllowsTrigger(hook, plugincontract.TriggerAgent) {
+			if !HookAllowsTrigger(hook, plugincontract.TriggerAgent) || !s.ContributionActive(ctx, installation, hook.RequiresFlag, "") {
 				continue
 			}
 			tools = append(tools, PluginHookTool{
@@ -129,16 +129,20 @@ func (s *PluginService) AgentHookTools(ctx context.Context, workspaceID pgtype.U
 // author_type already has a value for that, which is why this trigger needs no
 // new one.
 func (s *PluginService) InvokeAgentHook(ctx context.Context, installationID, hookKey string, agentID pgtype.UUID, input json.RawMessage) (HookResult, error) {
-	caller, err := s.AuthorizePluginAction(ctx, installationID, pgtype.UUID{}, "")
+	id, err := parseInstallationID(installationID)
 	if err != nil {
 		return HookResult{}, err
 	}
-	hook, err := FindHook(caller.Installation, hookKey)
+	installation, err := s.Queries.GetPluginInstallation(ctx, id)
+	if err != nil {
+		return HookResult{}, err
+	}
+	hook, err := FindHook(installation, hookKey)
 	if err != nil {
 		return HookResult{}, err
 	}
 	return s.InvokeHook(ctx, HookInvocation{
-		Installation: caller.Installation,
+		Installation: installation,
 		Hook:         hook,
 		Trigger:      plugincontract.TriggerAgent,
 		Actor:        HookActor{Type: "agent", ID: agentID},

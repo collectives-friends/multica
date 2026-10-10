@@ -10,11 +10,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/multica-ai/multica/server/internal/featureflags"
 	composio "github.com/multica-ai/multica/server/internal/integrations/composio"
+	"github.com/multica-ai/multica/server/internal/middleware"
 )
 
 // Composio integration handlers (MUL-3720, Stage 2 MVP). A Composio connection
-// belongs to a user, not a workspace, so these handlers live outside the
-// workspace-membership group. The four management endpoints (connect/init,
+// belongs to a user. The selected workspace controls availability, while
+// ownership checks remain user-scoped. The four management endpoints (connect/init,
 // toolkits, connections, delete) are user-scoped (requireUserID) and sit under
 // the Auth middleware. ComposioCallback is the exception: it is a public route
 // (outside the Auth group, see router.go / MUL-3843) because the browser often
@@ -57,8 +58,25 @@ type ComposioToolkitResponse struct {
 	Connectable bool   `json:"connectable"`
 }
 
+// PrepareComposioWorkspace verifies any explicit workspace selection before
+// resolving feature flags. Older clients without a selection retain deployment
+// defaults; an invalid selection must never silently fall back to those defaults.
+func (h *Handler) PrepareComposioWorkspace(next http.Handler) http.Handler {
+	scoped := middleware.RequireWorkspaceMember(h.Queries)(h.PrepareFeatureFlags(next))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if r.Header.Get("X-Actor-Source") == "task_token" ||
+			r.Header.Get("X-Workspace-Slug") != "" || r.Header.Get("X-Workspace-ID") != "" ||
+			q.Get("workspace_slug") != "" || q.Get("workspace_id") != "" {
+			scoped.ServeHTTP(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (h *Handler) composioMCPAppsEnabled(ctx context.Context) bool {
-	return featureflags.ComposioMCPAppsEnabled(ctx, h.FeatureFlags)
+	return h.workspaceFlagEnabled(ctx, ctxWorkspaceID(ctx), featureflags.ComposioMCPApps)
 }
 
 // ComposioConnectInit (POST /api/integrations/composio/connect/init) starts a
@@ -110,7 +128,9 @@ func (h *Handler) ComposioConnectInit(w http.ResponseWriter, r *http.Request) {
 // to the settings page; any failure redirects to the same page with a stable
 // error code so the user is never left on a blank API response.
 func (h *Handler) ComposioCallback(w http.ResponseWriter, r *http.Request) {
-	if h.Composio == nil || !h.composioMCPAppsEnabled(r.Context()) {
+	// Finish the existing signed user handshake without inventing workspace
+	// context for this public redirect. Runtime use remains workspace-gated.
+	if h.Composio == nil {
 		writeFeatureDisabled(w, "composio_not_configured", "composio integration not configured")
 		return
 	}

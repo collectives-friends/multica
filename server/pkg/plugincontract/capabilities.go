@@ -14,6 +14,7 @@ import (
 //
 // Flip an entry on in the same change that lands its runtime.
 type Capabilities struct {
+	Flags         bool
 	SurfaceTypes  map[string]bool
 	HookTriggers  map[string]bool
 	HookTransport map[string]bool
@@ -27,6 +28,7 @@ type Capabilities struct {
 // resources land with the agent integration.
 func HostCapabilities() Capabilities {
 	return Capabilities{
+		Flags: true,
 		// issue_panel mounts in PluginPanelSection; modal opens from a manual
 		// hook action. sidebar_panel stays off — it has no host location, and
 		// enabling a surface the host cannot render installs a plugin that
@@ -71,6 +73,9 @@ func (e *ErrCapabilityUnavailable) Error() string {
 // of discovering it one failed install at a time.
 func (m Manifest) CheckCapabilities(host Capabilities) error {
 	missing := map[string]bool{}
+	if m.usesFlags() && !host.Flags {
+		missing["flags"] = true
+	}
 	for _, surface := range m.Contributes.Surfaces {
 		if !host.SurfaceTypes[surface.Type] {
 			missing["surface "+surface.Type] = true

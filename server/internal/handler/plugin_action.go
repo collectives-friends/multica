@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/featureflags"
 	"github.com/multica-ai/multica/server/internal/middleware"
 	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/util"
@@ -74,7 +75,7 @@ func (a pluginActor) requireMember(w http.ResponseWriter, r *http.Request) bool 
 }
 
 func (h *Handler) requirePluginActionV1(w http.ResponseWriter, r *http.Request) bool {
-	if h.pluginsV1Enabled(r.Context()) {
+	if decision, ok := h.FeatureFlags.LookupLayer(r.Context(), featureflags.PluginsV1, true); !ok || decision.Enabled {
 		return true
 	}
 	publicapiv1.WriteProblem(w, r, http.StatusForbidden, "plugin_api_disabled", "Plugin management is not enabled")
@@ -91,6 +92,8 @@ func writePluginActionError(w http.ResponseWriter, r *http.Request, err error, f
 		return
 	}
 	switch pluginErr.Kind {
+	case service.PluginErrorContributionDisabled:
+		publicapiv1.WriteProblem(w, r, http.StatusForbidden, service.PluginContributionDisabled, "This plugin contribution is disabled")
 	case service.PluginErrorInvalid:
 		publicapiv1.WriteProblem(w, r, http.StatusBadRequest, "invalid_request", pluginErr.Message)
 	case service.PluginErrorNotFound:
@@ -110,9 +113,6 @@ func writePluginActionError(w http.ResponseWriter, r *http.Request, err error, f
 
 // pluginCaller runs checks 1 and 2 and returns the authorized caller.
 func (h *Handler) pluginCaller(w http.ResponseWriter, r *http.Request, scope string) (service.PluginActionCaller, pluginActor, bool) {
-	if !h.requirePluginActionV1(w, r) {
-		return service.PluginActionCaller{}, pluginActor{}, false
-	}
 	if token := middleware.BearerToken(r); middleware.IsPluginBearerToken(token) {
 		return h.pluginTokenCaller(w, r, token, scope)
 	}
@@ -135,6 +135,10 @@ func (h *Handler) pluginSessionCaller(w http.ResponseWriter, r *http.Request, sc
 
 	caller, err := h.PluginService.AuthorizePluginAction(r.Context(), r.Header.Get(pluginInstallationHeader), parsedUserID, scope)
 	if err != nil {
+		var pluginErr *service.PluginError
+		if errors.As(err, &pluginErr) && pluginErr.Kind == service.PluginErrorNotFound && !h.requirePluginActionV1(w, r) {
+			return service.PluginActionCaller{}, pluginActor{}, false
+		}
 		writePluginActionError(w, r, err, "failed to authorize the Plugin call")
 		return service.PluginActionCaller{}, pluginActor{}, false
 	}
@@ -145,6 +149,28 @@ func (h *Handler) pluginSessionCaller(w http.ResponseWriter, r *http.Request, sc
 	member, err := h.getWorkspaceMember(r.Context(), userID, uuidToString(caller.WorkspaceID))
 	if err != nil {
 		publicapiv1.WriteProblem(w, r, http.StatusNotFound, "not_found", "workspace not found")
+		return service.PluginActionCaller{}, pluginActor{}, false
+	}
+	// The host supplies this identity for every sandbox surface request.
+	surfaceKey := r.Header.Get("X-Multica-Plugin-Surface")
+	manifest, manifestErr := service.ParseInstallationManifest(caller.Installation)
+	if manifestErr != nil {
+		writePluginActionError(w, r, manifestErr, "invalid plugin manifest")
+		return service.PluginActionCaller{}, pluginActor{}, false
+	}
+	blocked := false
+	if surfaceKey != "" {
+		blocked = !h.PluginService.SurfaceActive(r.Context(), caller.Installation, surfaceKey, userID)
+	} else if !strings.Contains(r.URL.Path, "/hooks/") {
+		for _, surface := range manifest.Contributes.Surfaces {
+			if surface.RequiresFlag != "" {
+				blocked = true
+				break
+			}
+		}
+	}
+	if blocked {
+		publicapiv1.WriteProblem(w, r, http.StatusForbidden, service.PluginContributionDisabled, "This plugin contribution is disabled")
 		return service.PluginActionCaller{}, pluginActor{}, false
 	}
 	return caller, pluginActor{Type: "member", Member: member}, true
@@ -161,6 +187,7 @@ func (h *Handler) pluginTokenCaller(w http.ResponseWriter, r *http.Request, toke
 	actor := pluginActor{Type: "plugin"}
 	var memberUserID pgtype.UUID
 	var issueScope pgtype.UUID
+	var callbackHook string
 
 	switch {
 	case strings.HasPrefix(token, "mpc_"):
@@ -173,6 +200,7 @@ func (h *Handler) pluginTokenCaller(w http.ResponseWriter, r *http.Request, toke
 			writePluginActionError(w, r, err, "failed to authorize the Plugin call")
 			return service.PluginActionCaller{}, pluginActor{}, false
 		}
+		callbackHook = grant.HookKey
 		installationID = grant.InstallationID
 		issueScope = grant.IssueID
 		if grant.Actor.Type == "member" {
@@ -181,6 +209,9 @@ func (h *Handler) pluginTokenCaller(w http.ResponseWriter, r *http.Request, toke
 	default:
 		installation, err := h.PluginService.AuthenticateInstallToken(r.Context(), token)
 		if err != nil {
+			if !h.requirePluginActionV1(w, r) {
+				return service.PluginActionCaller{}, pluginActor{}, false
+			}
 			writePluginActionError(w, r, err, "failed to authorize the Plugin call")
 			return service.PluginActionCaller{}, pluginActor{}, false
 		}
@@ -193,6 +224,13 @@ func (h *Handler) pluginTokenCaller(w http.ResponseWriter, r *http.Request, toke
 		return service.PluginActionCaller{}, pluginActor{}, false
 	}
 
+	if callbackHook != "" {
+		hook, err := service.FindHook(caller.Installation, callbackHook)
+		if err != nil || !h.PluginService.ContributionActive(r.Context(), caller.Installation, hook.RequiresFlag, uuidToString(memberUserID)) {
+			publicapiv1.WriteProblem(w, r, http.StatusForbidden, service.PluginContributionDisabled, "This plugin contribution is disabled")
+			return service.PluginActionCaller{}, pluginActor{}, false
+		}
+	}
 	// The grant said which issue it was about. Carrying it here is what turns
 	// that from a comment into a check — see pluginIssueForUser.
 	caller.IssueScope = issueScope
@@ -298,11 +336,12 @@ func (h *Handler) GetPluginContext(w http.ResponseWriter, r *http.Request) {
 		issue = &loaded
 	}
 
-	writeJSON(w, http.StatusOK, publicPluginContext(h.PluginService.BuildPluginContext(caller, workspace, user, issue)))
+	writeJSON(w, http.StatusOK, publicPluginContext(h.PluginService.BuildPluginContext(caller, workspace, user, issue, r.Context())))
 }
 
 func publicPluginContext(context service.PluginContext) publicapiv1.Context {
 	payload := publicapiv1.Context{
+		Flags: context.Flags,
 		Workspace: publicapiv1.ContextWorkspace{
 			ID:   context.Workspace.ID,
 			Name: context.Workspace.Name,

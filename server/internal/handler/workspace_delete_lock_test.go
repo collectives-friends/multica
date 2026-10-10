@@ -177,3 +177,29 @@ VALUES ($1, $2, 'owner')
 		t.Fatal("workspace still exists after a successful delete")
 	}
 }
+
+func TestDeleteWorkspaceBoundsFeatureFlagLockWait(t *testing.T) {
+	setWorkspaceDeleteLockTimeoutForTest(t, 50*time.Millisecond)
+	ctx := context.Background()
+	wsID := dbfx.Workspace(t, "Flag lock", "flag-lock-delete")
+	dbfx.Member(t, wsID, testUserID, "owner")
+	tx, err := testPool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if err := testHandler.Queries.WithTx(tx).LockWorkspaceFlagWrites(ctx, wsID); err != nil {
+		t.Fatal(err)
+	}
+	req := withURLParam(newRequest("DELETE", "/api/workspaces/"+wsID, nil), "id", wsID)
+	bounded, cancel := context.WithTimeout(req.Context(), time.Second)
+	defer cancel()
+	w := httptest.NewRecorder()
+	testHandler.DeleteWorkspace(w, req.WithContext(bounded))
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want retryable 503, got %d: %s", w.Code, w.Body.String())
+	}
+	if bounded.Err() != nil {
+		t.Fatal("wait consumed request deadline rather than local lock timeout")
+	}
+}

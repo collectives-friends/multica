@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { featureFlagsOptions } from "@multica/core/feature-flags";
 import { pluginSurfaceLaunchOptions } from "@multica/core/plugins";
 import type { PluginInstallation, PluginSurface } from "@multica/core/types";
 import { cn } from "@multica/ui/lib/utils";
@@ -31,6 +32,7 @@ export function PluginSurfaceFrame({ wsId, installation, surface, issueId, class
   const anchorRef = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState(DEFAULT_HEIGHT);
   const launchInstance = useId();
+  const { dataUpdatedAt: flagsUpdatedAt } = useQuery(featureFlagsOptions(wsId));
 
   // Every mounted frame gets its own launch. The artifact is immutable, but the
   // bridge proof is deliberately neither cacheable nor shareable.
@@ -63,11 +65,12 @@ export function PluginSurfaceFrame({ wsId, installation, surface, issueId, class
   const bridge = useMemo(
     () => createSurfaceBridge({
       installationId: installation.id,
+      surfaceKey: surface.key,
       bridgeToken: launch?.bridge_token ?? "",
       issueId,
       onResize: setHeight,
     }),
-    [installation.id, launch?.bridge_token, issueId],
+    [installation.id, surface.key, launch?.bridge_token, issueId],
   );
 
   // The listener is armed BEFORE srcdoc is assigned. That makes the guest-first
@@ -97,6 +100,10 @@ export function PluginSurfaceFrame({ wsId, installation, surface, issueId, class
       frame.removeAttribute("srcdoc");
     };
   }, [bridge, surfaceDocument, surfaceInstance]);
+
+  useEffect(() => {
+    if (flagsUpdatedAt) void bridge.refreshFlags();
+  }, [bridge, flagsUpdatedAt]);
 
   useEffect(() => {
     if (navigated) bridge.close();

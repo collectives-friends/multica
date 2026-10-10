@@ -164,3 +164,27 @@ func TestDecodeRemoteMCPSSEData(t *testing.T) {
 		t.Fatalf("decodeRemoteMCPSSEData = %q, %v", raw, err)
 	}
 }
+
+func TestPluginMCPWithoutSecretRechecksFlagsBeforeUpstreamCall(t *testing.T) {
+	called := false
+	upstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
+	defer upstream.Close()
+	endpoint, _ := url.Parse(upstream.URL)
+	proxy := &remoteMCPProxy{
+		endpoint: endpoint, client: upstream.Client(), path: "/capability",
+		semaphore: make(chan struct{}, remoteMCPMaxConcurrency),
+		connection: remotemcp.Connection{
+			ContributionID: "plugin:installation:hook",
+			ApprovedTools:  []remotemcp.Tool{{Name: "allowed"}},
+		},
+		resolveCredential: func(context.Context, string) (http.Header, error) {
+			return nil, errors.New("revoked")
+		},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/capability", bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"allowed","arguments":{}}}`))
+	response := httptest.NewRecorder()
+	proxy.ServeHTTP(response, request)
+	if called || !strings.Contains(response.Body.String(), "revoked or unavailable") {
+		t.Fatalf("called=%v response=%s", called, response.Body.String())
+	}
+}

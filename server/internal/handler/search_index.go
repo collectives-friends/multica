@@ -235,7 +235,7 @@ type SearchIndexChangesResponse struct {
 // keep using server search.
 func (h *Handler) RequireLocalSearchIndex(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !featureflags.LocalSearchIndexEnabled(r.Context(), h.FeatureFlags) {
+		if !h.workspaceFlagEnabled(r.Context(), h.resolveWorkspaceID(r), featureflags.LocalSearchIndex) {
 			writeError(w, http.StatusNotFound, "local search index is disabled")
 			return
 		}

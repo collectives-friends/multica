@@ -232,6 +232,16 @@ func (q *Queries) DeleteWorkspaceConnections(ctx context.Context, workspaceID pg
 	return err
 }
 
+const deleteWorkspaceFeatureFlagData = `-- name: DeleteWorkspaceFeatureFlagData :exec
+WITH deleted_audit AS (DELETE FROM workspace_feature_flag_audit WHERE workspace_feature_flag_audit.workspace_id = $1)
+DELETE FROM workspace_feature_flag_override WHERE workspace_feature_flag_override.workspace_id = $1
+`
+
+func (q *Queries) DeleteWorkspaceFeatureFlagData(ctx context.Context, workspaceID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteWorkspaceFeatureFlagData, workspaceID)
+	return err
+}
+
 const deleteWorkspaceIssueRoots = `-- name: DeleteWorkspaceIssueRoots :exec
 WITH deleted_wakeup_receipts AS (
  DELETE FROM issue_wakeup_receipt WHERE wakeup_id IN (SELECT id FROM issue_wakeup WHERE workspace_id=$1)

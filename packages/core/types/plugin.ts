@@ -22,6 +22,7 @@ export interface PluginConfigField {
 export type PluginSurfaceType = "issue_panel" | "sidebar_panel" | "modal";
 
 export interface PluginSurface {
+  requires_flag?: string;
   key: string;
   type: PluginSurfaceType | string;
   name: string;
@@ -39,6 +40,7 @@ export interface PluginHookSchedule {
 }
 
 export interface PluginHook {
+  requires_flag?: string;
   key: string;
   name: string;
   description: string;
@@ -49,6 +51,7 @@ export interface PluginHook {
 }
 
 export interface PluginResource {
+  requires_flag?: string;
   type: string;
   key: string;
   entry: string;

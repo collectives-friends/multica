@@ -4,25 +4,44 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/multica-ai/multica/server/pkg/featureflag"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/featureflags"
 	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/plugincontract"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 func (h *Handler) pluginsV1Enabled(ctx context.Context) bool {
-	return featureflags.PluginsV1Enabled(ctx, h.FeatureFlags)
+	if h.FlagResolver != nil {
+		return h.FlagResolver.Enabled(ctx, featureflags.PluginsV1)
+	}
+	return h.flagResolverFor(h.Queries).Enabled(ctx, featureflags.PluginsV1)
 }
 
 func (h *Handler) requirePluginsV1(w http.ResponseWriter, r *http.Request) bool {
-	if h.pluginsV1Enabled(r.Context()) {
+	workspaceID := workspaceIDFromURL(r, "id")
+	resolver := h.pluginFlagResolver()
+	if resolver.EnabledFor(r.Context(), workspaceID, r.Header.Get("X-User-ID"), featureflags.PluginsV1) {
 		return true
 	}
 	writeFeatureDisabled(w, "plugin_api_disabled", "Plugin management is not enabled")
 	return false
+}
+
+func (h *Handler) pluginFlagResolver() *featureflags.Resolver {
+	if h.FlagResolver != nil {
+		return h.FlagResolver
+	}
+	return h.flagResolverFor(h.Queries)
+}
+
+func pluginRequestContext(r *http.Request, workspaceID, userID string) context.Context {
+	return featureflag.WithEvalContext(r.Context(), featureflag.EvalContext{WorkspaceID: workspaceID, UserID: userID})
 }
 
 // writePluginError maps a service error onto a status. Kinds exist so the
@@ -34,6 +53,8 @@ func writePluginError(w http.ResponseWriter, err error, fallback string) {
 		return
 	}
 	switch pluginErr.Kind {
+	case service.PluginErrorContributionDisabled:
+		writeErrorCode(w, http.StatusForbidden, service.PluginContributionDisabled, "This plugin contribution is disabled")
 	case service.PluginErrorInvalid:
 		writeError(w, http.StatusBadRequest, pluginErr.Message)
 	case service.PluginErrorNotFound:
@@ -56,11 +77,12 @@ func writePluginError(w http.ResponseWriter, err error, fallback string) {
 // encrypted table), and configured secrets appear as names in
 // `configured_secrets`.
 type pluginInstallationResponse struct {
-	ID          string `json:"id"`
-	PluginKey   string `json:"plugin_key"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Version     string `json:"version"`
+	Flags       []plugincontract.FlagDefinition `json:"flags"`
+	ID          string                          `json:"id"`
+	PluginKey   string                          `json:"plugin_key"`
+	Name        string                          `json:"name"`
+	Description string                          `json:"description,omitempty"`
+	Version     string                          `json:"version"`
 	// The published version this installation is bound to. Nothing about it can
 	// change under the workspace's feet: upgrading means pointing at a different
 	// version id, which is a second consent.
@@ -80,13 +102,14 @@ type pluginInstallationResponse struct {
 // pluginHookResponse omits input_schema: the settings page lists what a hook is
 // and who may call it, and the raw JSON Schema is noise there.
 type pluginHookResponse struct {
-	Key         string                      `json:"key"`
-	Name        string                      `json:"name"`
-	Description string                      `json:"description"`
-	Triggers    []string                    `json:"triggers"`
-	Events      []string                    `json:"events,omitempty"`
-	Transport   string                      `json:"transport"`
-	Schedule    *pluginHookScheduleResponse `json:"schedule,omitempty"`
+	RequiresFlag string                      `json:"requires_flag,omitempty"`
+	Key          string                      `json:"key"`
+	Name         string                      `json:"name"`
+	Description  string                      `json:"description"`
+	Triggers     []string                    `json:"triggers"`
+	Events       []string                    `json:"events,omitempty"`
+	Transport    string                      `json:"transport"`
+	Schedule     *pluginHookScheduleResponse `json:"schedule,omitempty"`
 }
 
 type pluginHookScheduleResponse struct {
@@ -125,15 +148,27 @@ func (h *Handler) pluginInstallationPayload(ctx context.Context, installation db
 		schedules[schedule.HookKey] = schedule
 	}
 
+	userID := featureflag.EvalContextFrom(ctx).UserID
 	hooks := make([]pluginHookResponse, 0, len(manifest.Contributes.Hooks))
 	for _, hook := range manifest.Contributes.Hooks {
+		hookUserID := ""
+		for _, trigger := range hook.Triggers {
+			if trigger == plugincontract.TriggerUI || trigger == plugincontract.TriggerManual {
+				hookUserID = userID
+				break
+			}
+		}
+		if !h.PluginService.ContributionActive(ctx, installation, hook.RequiresFlag, hookUserID) {
+			continue
+		}
 		response := pluginHookResponse{
-			Key:         hook.Key,
-			Name:        hook.Name,
-			Description: hook.Description,
-			Triggers:    hook.Triggers,
-			Events:      hook.Events,
-			Transport:   hook.Transport.Type,
+			RequiresFlag: hook.RequiresFlag,
+			Key:          hook.Key,
+			Name:         hook.Name,
+			Description:  hook.Description,
+			Triggers:     hook.Triggers,
+			Events:       hook.Events,
+			Transport:    hook.Transport.Type,
 		}
 		if schedule, ok := schedules[hook.Key]; ok {
 			response.Schedule = &pluginHookScheduleResponse{
@@ -146,16 +181,21 @@ func (h *Handler) pluginInstallationPayload(ctx context.Context, installation db
 		}
 		hooks = append(hooks, response)
 	}
-	surfaces := manifest.Contributes.Surfaces
-	if surfaces == nil {
-		surfaces = []plugincontract.Surface{}
+	surfaces := make([]plugincontract.Surface, 0, len(manifest.Contributes.Surfaces))
+	for _, surface := range manifest.Contributes.Surfaces {
+		if h.PluginService.ContributionActive(ctx, installation, surface.RequiresFlag, userID) {
+			surfaces = append(surfaces, surface)
+		}
 	}
-	resources := manifest.Contributes.Resources
-	if resources == nil {
-		resources = []plugincontract.Resource{}
+	resources := make([]plugincontract.Resource, 0, len(manifest.Contributes.Resources))
+	for _, resource := range manifest.Contributes.Resources {
+		if h.PluginService.ContributionActive(ctx, installation, resource.RequiresFlag, "") {
+			resources = append(resources, resource)
+		}
 	}
 
 	return pluginInstallationResponse{
+		Flags:             append([]plugincontract.FlagDefinition{}, manifest.Contributes.Flags...),
 		ID:                uuidToString(installation.ID),
 		PluginKey:         installation.PluginKey,
 		Name:              manifest.Name,
@@ -193,7 +233,7 @@ func (h *Handler) ListPlugins(w http.ResponseWriter, r *http.Request) {
 	}
 	payloads := make([]pluginInstallationResponse, 0, len(installations))
 	for _, installation := range installations {
-		payload, err := h.pluginInstallationPayload(r.Context(), installation)
+		payload, err := h.pluginInstallationPayload(pluginRequestContext(r, uuidToString(installation.WorkspaceID), r.Header.Get("X-User-ID")), installation)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to list Plugins")
 			return
@@ -261,7 +301,8 @@ func (h *Handler) InstallPlugin(w http.ResponseWriter, r *http.Request) {
 		writePluginError(w, err, "failed to install the Plugin")
 		return
 	}
-	payload, err := h.pluginInstallationPayload(r.Context(), installation)
+	h.publishPluginCatalogChanged(r, uuidToString(installation.WorkspaceID))
+	payload, err := h.pluginLifecyclePayload(r, installation)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to install the Plugin")
 		return
@@ -289,7 +330,7 @@ func (h *Handler) ConfigurePlugin(w http.ResponseWriter, r *http.Request) {
 		writePluginError(w, err, "failed to configure the Plugin")
 		return
 	}
-	payload, err := h.pluginInstallationPayload(r.Context(), updated)
+	payload, err := h.pluginInstallationPayload(pluginRequestContext(r, uuidToString(updated.WorkspaceID), r.Header.Get("X-User-ID")), updated)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to configure the Plugin")
 		return
@@ -317,7 +358,10 @@ func (h *Handler) setPluginEnabled(w http.ResponseWriter, r *http.Request, enabl
 		writePluginError(w, err, "failed to update the Plugin")
 		return
 	}
-	payload, err := h.pluginInstallationPayload(r.Context(), updated)
+	if installation.Enabled != updated.Enabled {
+		h.publishPluginCatalogChanged(r, uuidToString(installation.WorkspaceID))
+	}
+	payload, err := h.pluginLifecyclePayload(r, updated)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update the Plugin")
 		return
@@ -335,6 +379,7 @@ func (h *Handler) UninstallPlugin(w http.ResponseWriter, r *http.Request) {
 		writePluginError(w, err, "failed to uninstall the Plugin")
 		return
 	}
+	h.publishPluginCatalogChanged(r, uuidToString(installation.WorkspaceID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -352,4 +397,26 @@ func (h *Handler) pluginInstallationFromURL(w http.ResponseWriter, r *http.Reque
 		return db.PluginInstallation{}, false
 	}
 	return installation, true
+}
+
+func (h *Handler) publishPluginCatalogChanged(r *http.Request, workspaceID string) {
+	if h.Bus == nil {
+		return
+	}
+	h.Bus.Publish(events.Event{Type: protocol.EventFeatureFlagChanged, WorkspaceID: workspaceID, ActorType: "member", ActorID: requestUserID(r), Payload: map[string]any{"workspace_id": workspaceID, "key": featureflags.PluginsV1, "scope_type": "workspace", "enabled": nil, "locked": nil, "action": "catalog_changed"}})
+}
+
+// Lifecycle writes change definitions while the request still carries its old
+// prepared snapshot. Refresh only these responses; list requests reuse their
+// single middleware snapshot for every installation.
+func (h *Handler) pluginLifecyclePayload(r *http.Request, installation db.PluginInstallation) (pluginInstallationResponse, error) {
+	resolver := h.PluginService.FlagResolver
+	if resolver == nil {
+		resolver = h.pluginFlagResolver()
+	}
+	ctx, err := resolver.Prepare(r.Context(), uuidToString(installation.WorkspaceID), requestUserID(r))
+	if err != nil {
+		return pluginInstallationResponse{}, err
+	}
+	return h.pluginInstallationPayload(ctx, installation)
 }

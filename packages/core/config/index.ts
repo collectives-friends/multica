@@ -1,3 +1,4 @@
+import { useFeatureFlag } from "../feature-flags/hooks";
 import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand";
 
@@ -113,7 +114,5 @@ export function featureFlagEnabled(
 }
 
 export function useFeatureEnabled(key: string, defaultValue = false): boolean {
-  return useConfigStore((state) =>
-    featureFlagEnabled(state.featureFlags, key, defaultValue),
-  );
+  return useFeatureFlag(key, defaultValue).enabled;
 }

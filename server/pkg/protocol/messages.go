@@ -454,3 +454,5 @@ type DaemonHeartbeatPendingLocalSkillImport struct {
 	ID       string `json:"id"`
 	SkillKey string `json:"skill_key"`
 }
+
+const EventFeatureFlagChanged = "feature_flag:changed"

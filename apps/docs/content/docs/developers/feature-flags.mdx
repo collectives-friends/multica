@@ -1,0 +1,159 @@
+---
+title: Feature flags and plugins
+description: Configure workspace and personal features, declare plugin flags, and follow live changes.
+---
+
+Feature flags control which existing features and plugin contributions are available in a workspace. The server resolves every value. Web, desktop, the CLI, and plugin surfaces consume that result; they do not repeat the precedence rules locally. A flag does not grant a permission, a subscription entitlement, a missing integration credential, or a plugin scope.
+
+## Workspace settings
+
+Open **Settings → Workspace → Features**. This page remains available when Plugins is off. Features are grouped by host area and enabled plugin installation. Search or filter the list, then inspect the effective value, source, and lock state.
+
+Workspace owners and admins can choose:
+
+| For whom | Stored override |
+| --- | --- |
+| Use default | Remove the workspace override |
+| On for everyone (locked) | `enabled: true, locked: true` |
+| Off for everyone (locked) | `enabled: false, locked: true` |
+| On by default (members can choose) | `enabled: true, locked: false` |
+| Off by default (members can choose) | `enabled: false, locked: false` |
+
+Members can change their own value only for `member_overridable` definitions. **Reset my choice** removes that personal override, so the value follows the workspace or underlying rule again. A workspace lock, deployment override, disabled parent, or frozen definition controls the effective result even if an older personal override is still stored. `workspace_only` flags have no personal setting. History records who changed an override, its previous and new values, and any reason.
+
+Changes update connected clients without reloading the page. Turning off a contribution's gate removes that contribution and blocks new server calls through it. Already-running requests and skill text already loaded into an agent cannot be recalled.
+
+### Admin and member views
+
+![Workspace administrator managing feature policies](/images/docs/feature-flags-admin.webp)
+
+![Member choosing a personal plugin flag](/images/docs/feature-flags-member.webp)
+
+The same member's issue before and after the administrator turns off the panel gate, without reloading:
+
+![Hello Panel enabled](/images/docs/feature-flags-member-panel-on.webp)
+
+![Hello Panel removed after a live workspace change](/images/docs/feature-flags-member-panel-off.webp)
+
+## Resolution
+
+Parent-off forces a child off. For an ordinary enabled parent chain, the first applicable layer wins:
+
+1. Deployment override.
+2. Locked workspace override.
+3. Personal override, only for `member_overridable` flags.
+4. Unlocked workspace override.
+5. Targeting rule.
+6. Definition default.
+
+Frozen compatibility flags are parentless invariants outside this chain. Their value cannot be changed, even by deployment configuration. Existing always-on compatibility features remain on. Unknown keys and keys belonging to disabled plugins return the caller's default; contribution gates use `false`. Database or manifest failures fail gates closed and return an operational error from the flags API rather than pretending an override never existed.
+
+Workspace-only evaluation removes the user identity throughout the parent chain and targeting context. Background schedules, event delivery, and agent contributions use workspace resolution. Member-facing surfaces and manual actions use the verified caller's context. All active host feature flags use the same resolver. The legacy `triage_v1` definition has no active feature gate in this build.
+
+Authenticated workspace requests load override state once. Background results have a short cache, invalidated after committed changes and plugin lifecycle changes. The public `/api/config` response contains deployment-level public flags only; it never exposes a workspace or member's overrides.
+
+## Deployment and YAML rules
+
+`MULTICA_FEATURE_FLAGS_FILE` names an optional YAML file read at startup. A malformed file prevents startup. An absent file leaves workspace overrides, targeting, and definition defaults to determine the result.
+
+A present `FF_<KEY>` environment variable is a deployment override. Its existing boolean, percent, and variant formats remain supported. It takes precedence over both workspace and personal choices. An explicitly empty environment value means off. Restart the process after changing its environment.
+
+A YAML entry **without targeting** and with an explicit `default` is also a deployment value:
+
+```yaml
+plugins_v1:
+  default: false
+```
+
+This disables Plugins across workspaces. To enable it selectively through workspace settings, omit that deployment override.
+
+A YAML entry with `allow`, `deny`, or `percent` is a targeting rule below workspace and personal overrides. Its fallback belongs to that same rule layer; `default: false` does not become a global deployment kill switch:
+
+```yaml
+plugins_v1:
+  default: false
+  allow: ["workspace-id"]
+  allow_by: workspace_id
+```
+
+Omitted defaults and explicitly false defaults remain distinguishable. An empty untargeted YAML entry is not an explicit deployment value. For workspace-only flags, use workspace targeting rather than a member ID. Parent-off still wins over a deployment-on value.
+
+## Manifest version 2
+
+Version 2 adds `contributes.flags` and `requires_flag`. Existing version 1 plugins continue to work, but cannot include the new fields, even as empty lists or empty strings. Unknown manifest versions are rejected. A plugin can declare at most 32 flags, with unique local keys matching `[a-z][a-z0-9_]{1,63}`.
+
+```json
+{
+  "manifest_version": 2,
+  "key": "ai.multica.hello-panel",
+  "name": "Hello Panel",
+  "version": "2.0.0",
+  "scopes": ["issues:read"],
+  "contributes": {
+    "flags": [
+      {
+        "key": "beta_panel",
+        "label": "Hello panel",
+        "default": true,
+        "scope_policy": "member_overridable"
+      }
+    ],
+    "surfaces": [
+      {
+        "key": "hello",
+        "type": "issue_panel",
+        "name": "Hello",
+        "entry": "ui/main.js",
+        "requires_flag": "beta_panel"
+      }
+    ]
+  }
+}
+```
+
+A flag's optional `parent`, or a contribution's `requires_flag`, can reference one of the plugin's own keys or `host:<public_host_key>`. References to another plugin, private host flags, unknown keys, and parent cycles are rejected. Every plugin flag also depends on `plugins_v1`, including flags with an explicit parent. A gate can be attached to surfaces, hooks, and resources. Backend checks apply to listing, surface launch and scripts, actions, hooks, MCP tools, and new skill resolutions.
+
+The full administration key is `plugin:<plugin_key>:<local_key>`, for example `plugin:ai.multica.hello-panel:beta_panel`. The flag registry uses the enabled installation's consented manifest snapshot. Publishing a new version alone never changes what an installed plugin runs.
+
+Disabling a plugin preserves its overrides. Upgrading preserves unchanged keys and clears removed keys with system audit entries. Uninstalling clears that plugin's overrides and preserves history. Workspace deletion removes its override and audit data.
+
+## Plugin SDK 0.2.0
+
+`PluginContext.flags` contains resolved booleans for the plugin's own short keys and referenced public host keys with their `host:` prefix. It contains no other plugin's flags or private host metadata. Hook contexts receive the same scoped resolution.
+
+```ts
+import { multica } from "@multica/plugin-sdk";
+
+const flags = await multica.flags.all();
+const showHint = await multica.flags.get("show_hint", false);
+const stop = multica.flags.onChange((updated) => {
+  renderHint(updated.show_hint ?? false);
+});
+
+// Clean up when the surface no longer needs this listener.
+stop();
+```
+
+Updates use the existing private MessagePort. The SDK updates its cached context before notifying subscribers, so `multica.context.get()` follows the new values too. The bridge protocol remains version 2 and hook wire format remains version 1. Older contexts without `flags` yield an empty map; `get` uses its supplied fallback for absent keys. A browser surface has no flag-write API.
+
+The [Hello Panel example](https://github.com/multica-ai/multica/tree/main/examples/plugins/hello-panel) demonstrates two independent effects: `beta_panel` gates the panel itself, while `show_hint` changes a hint inside an already-open panel. Turning the latter off should preserve both the host page and the plugin document.
+
+## CLI
+
+The CLI uses the configured profile, server, and workspace. `set` and `unset` target the workspace by default and require owner/admin authorization on the server.
+
+```sh
+multica feature list --group Integrations --state on
+multica feature list --plugin ai.multica.hello-panel --output json
+multica feature get plugin:ai.multica.hello-panel:beta_panel
+multica feature set plugin:ai.multica.hello-panel:beta_panel off --locked --reason "Pause rollout"
+multica feature set plugin:ai.multica.hello-panel:show_hint off --personal
+multica feature unset plugin:ai.multica.hello-panel:show_hint --personal
+multica feature history plugin:ai.multica.hello-panel:beta_panel --output json
+```
+
+`--locked` cannot be combined with `--personal`. Removing an override is different from setting it to off. The JSON list includes definitions, effective values, sources, and lock state; `get` includes the definition and stored overrides. Audit history preserves nullable old/new values and a pagination cursor.
+
+## Compatibility and rollback
+
+Manifest v2 installations require a backend that understands v2 snapshots. After storing v2 versions or installation snapshots, an older v1-only backend is not a safe rollback target. Roll back only to a compatible backend and artifact set; do not rewrite manifests or discard newer workspace data to make an old reader accept them. The flag feature does not add daemon heartbeat configuration, plugin credentials, scopes, or alternate transport permissions.

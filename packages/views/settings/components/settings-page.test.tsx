@@ -28,6 +28,7 @@ vi.mock("./properties-tab", stub("PropertiesTab"));
 vi.mock("./quick-actions-tab", stub("QuickActionsTab"));
 vi.mock("./keyboard-shortcuts-tab", stub("KeyboardShortcutsTab"));
 vi.mock("./plugins-tab", stub("PluginsTab"));
+vi.mock("./features-tab", stub("FeaturesTab"));
 vi.mock("./mcp-tab", stub("McpTab"));
 vi.mock("./billing-tab", stub("BillingTab"));
 
@@ -360,4 +361,17 @@ describe("SettingsPage search", () => {
     );
     expect(screen.getByText("No matching settings")).toBeInTheDocument();
   });
+});
+
+// This suite checks feature-gate consumers. Scoped resolution is covered in core.
+vi.mock("@multica/core/config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@multica/core/config")>();
+  return { ...actual, useFeatureEnabled: (key:string, fallback=false) => actual.useConfigStore(state=>state.featureFlags[key] ?? fallback) };
+});
+
+it("keeps Features available while plugins are off",()=>{
+  navigationState.search="tab=features";
+  renderWithI18n(<SettingsPage/>);
+  expect(screen.getByRole("link",{name:"Features"})).toBeInTheDocument();
+  expect(screen.getByText("FeaturesTab")).toBeInTheDocument();
 });

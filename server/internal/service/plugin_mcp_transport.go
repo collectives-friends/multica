@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -53,6 +54,11 @@ func (s *PluginService) DiscoverMCPHookTools(ctx context.Context, installation d
 	hook, err := FindHook(installation, hookKey)
 	if err != nil {
 		return nil, err
+	}
+	var gateErr error
+	ctx, gateErr = s.RequireContributionFresh(ctx, installation, hook.RequiresFlag, pluginUserFromContext(ctx))
+	if gateErr != nil {
+		return nil, gateErr
 	}
 	if hook.Transport.Type != plugincontract.TransportMCP {
 		return nil, pluginErrf(PluginErrorInvalid, "hook %q is not an mcp transport", hookKey)
@@ -155,7 +161,13 @@ func (s *PluginService) AgentMCPConnections(ctx context.Context, workspaceID pgt
 		if !installation.Enabled {
 			continue
 		}
-		connections = append(connections, mcpConnectionsFor(installation)...)
+		for _, connection := range mcpConnectionsFor(installation) {
+			hookKey := strings.TrimPrefix(connection.ContributionID, remotemcp.PluginContributionPrefix+uuidString(installation.ID)+":")
+			hook, err := FindHook(installation, hookKey)
+			if err == nil && s.ContributionActive(ctx, installation, hook.RequiresFlag, "") {
+				connections = append(connections, connection)
+			}
+		}
 	}
 	return connections, nil
 }
@@ -286,6 +298,9 @@ func (s *PluginService) ApprovedMCPTools(installation db.PluginInstallation, hoo
 func (s *PluginService) MCPHookCredential(ctx context.Context, installation db.PluginInstallation, hookKey string) (string, string, error) {
 	hook, err := FindHook(installation, hookKey)
 	if err != nil {
+		return "", "", err
+	}
+	if _, err := s.RequireContributionFresh(ctx, installation, hook.RequiresFlag, ""); err != nil {
 		return "", "", err
 	}
 	headers, err := s.mcpCredentialHeaders(ctx, installation, hook)

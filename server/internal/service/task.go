@@ -53,6 +53,7 @@ type TaskService struct {
 	// FeatureFlags is the server-side toggle router. Nil is valid and returns
 	// each call site's default.
 	FeatureFlags *featureflag.Service
+	FlagResolver *featureflags.Resolver
 	// EmptyClaim caches "this runtime has no queued task" so the daemon
 	// poll path can skip a Postgres scan on the steady-state empty case.
 	// Optional — a nil cache disables the fast path and every claim
@@ -370,7 +371,7 @@ func (s *TaskService) buildRuntimeMCPOverlay(ctx context.Context, originatorUser
 	if s == nil || s.Composio == nil {
 		return runtimeMCPOverlayData{}
 	}
-	if !featureflags.ComposioMCPAppsEnabled(ctx, s.FeatureFlags) {
+	if !s.workspaceFlagEnabled(ctx, util.UUIDToString(agent.WorkspaceID), featureflags.ComposioMCPApps) {
 		return runtimeMCPOverlayData{}
 	}
 	result, err := s.Composio.BuildTaskOverlay(ctx, originatorUserID, agent)
@@ -1157,7 +1158,7 @@ func (s *TaskService) createDeferredChannelIssueTaskWithQueries(ctx context.Cont
 // overwrite a comment merge that won the post-commit race and already
 // re-attributed the task (with its own matching overlay).
 func (s *TaskService) hydrateDeferredChannelIssueTaskOverlay(ctx context.Context, task db.AgentTaskQueue) error {
-	if s == nil || s.Queries == nil || s.Composio == nil || !featureflags.ComposioMCPAppsEnabled(ctx, s.FeatureFlags) {
+	if s == nil || s.Queries == nil || s.Composio == nil {
 		return nil
 	}
 	agent, err := s.Queries.GetAgent(ctx, task.AgentID)
@@ -6881,6 +6882,21 @@ func (s *TaskService) LoadAgentSkills(ctx context.Context, agentID pgtype.UUID) 
 // scoped load so the two cannot drift on skill order, per-skill file order, or
 // the nil (not empty) file list of a skill that has none.
 func (s *TaskService) skillsWithFiles(ctx context.Context, skills []db.Skill) ([]AgentSkillData, error) {
+	plugins := &PluginService{Queries: s.Queries, FeatureFlags: s.FeatureFlags, FlagResolver: s.FlagResolver}
+	active := make([]db.Skill, 0, len(skills))
+	for _, skill := range skills {
+		enabled, err := plugins.ResolveSkillActive(ctx, skill)
+		if err != nil {
+			return nil, fmt.Errorf("resolve plugin skill %s: %w", util.UUIDToString(skill.ID), err)
+		}
+		if enabled {
+			active = append(active, skill)
+		}
+	}
+	skills = active
+	if len(skills) == 0 {
+		return nil, nil
+	}
 	skillIDs := make([]pgtype.UUID, len(skills))
 	for i, sk := range skills {
 		skillIDs[i] = sk.ID
@@ -8101,4 +8117,16 @@ func agentToMap(a db.Agent) map[string]any {
 		"archived_at":          util.TimestampToPtr(a.ArchivedAt),
 		"archived_by":          util.UUIDToPtr(a.ArchivedBy),
 	}
+}
+
+func (s *TaskService) workspaceFlagEnabled(ctx context.Context, workspaceID, key string) bool {
+	resolver := s.FlagResolver
+	if resolver == nil {
+		var source featureflags.Source
+		if s.Queries != nil {
+			source = featureflags.DBSource{Queries: s.Queries}
+		}
+		resolver = featureflags.NewResolver(featureflags.HostRegistry(), s.FeatureFlags, source)
+	}
+	return resolver.ResolveWorkspace(ctx, workspaceID, key).Value
 }

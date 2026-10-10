@@ -719,3 +719,7 @@ deleted_share_links AS (
 )
 DELETE FROM workspace_invitation
 WHERE workspace_invitation.workspace_id = $1;
+
+-- name: DeleteWorkspaceFeatureFlagData :exec
+WITH deleted_audit AS (DELETE FROM workspace_feature_flag_audit WHERE workspace_feature_flag_audit.workspace_id = $1)
+DELETE FROM workspace_feature_flag_override WHERE workspace_feature_flag_override.workspace_id = $1;

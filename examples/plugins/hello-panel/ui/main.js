@@ -12,12 +12,23 @@
 const pending = new Map();
 const port = globalThis.__multicaPluginBridgePortV2;
 let sequence = 0;
+let cachedContext = null;
+let latestFlags = null;
+let flagsRevision = 0;
+const flagListeners = new Set();
 
 if (!(port instanceof MessagePort)) throw new Error("Multica surface bridge is unavailable");
 delete globalThis.__multicaPluginBridgePortV2;
 port.onmessage = (message) => {
   const payload = message.data;
   if (payload?.kind === "theme") return applyTheme(payload.theme);
+  if (payload?.kind === "flags") {
+    latestFlags = { ...payload.flags };
+    flagsRevision++;
+    if (cachedContext) cachedContext = { ...cachedContext, flags: { ...latestFlags } };
+    for (const listener of flagListeners) listener({ ...latestFlags });
+    return;
+  }
   const entry = pending.get(payload?.id);
   if (!entry) return;
   pending.delete(payload.id);
@@ -25,7 +36,6 @@ port.onmessage = (message) => {
   else entry.reject(new Error(payload.error));
 };
 port.start();
-start();
 
 function applyTheme(theme) {
   for (const [name, value] of Object.entries(theme ?? {})) {
@@ -40,6 +50,37 @@ function call(method, path, body) {
     port.postMessage({ id, kind: "action", method, path, body });
   });
 }
+
+// The same read/subscription shape as @multica/plugin-sdk 0.2.0. This small
+// inline client keeps the example publishable without a bundling step.
+const multica = {
+  context: {
+    get: async (force = false) => {
+      if (cachedContext && !force) return cachedContext;
+      const revision = flagsRevision;
+      const context = await call("GET", "/context");
+      if (latestFlags === null || (force && revision === flagsRevision)) {
+        latestFlags = { ...(context.flags ?? {}) };
+      }
+      cachedContext = { ...context, flags: { ...latestFlags } };
+      return cachedContext;
+    },
+  },
+  flags: {
+    all: async () => {
+      if (latestFlags === null) await multica.context.get();
+      return { ...latestFlags };
+    },
+    get: async (key, fallback = false) => {
+      return (await multica.flags.all())[key] ?? fallback;
+    },
+    onChange(listener) {
+      flagListeners.add(listener);
+      if (latestFlags !== null) listener({ ...latestFlags });
+      return () => flagListeners.delete(listener);
+    },
+  },
+};
 
 function resize() {
   // The host clamps this; asking for the content height is the normal case.
@@ -60,6 +101,8 @@ async function start() {
                       background:var(--background); color:var(--foreground)">
         <button id="save" style="padding:6px 10px">Save</button>
       </div>
+      <p id="hint" data-testid="feature-hint" hidden
+         style="margin:0; color:var(--muted-foreground)">Your note is private to you in this workspace.</p>
       <button id="comment" style="padding:6px 10px; justify-self:start">Post a test comment</button>
       <div id="status" style="color:var(--muted-foreground); min-height:1.2em"></div>
     </div>`;
@@ -67,7 +110,22 @@ async function start() {
   const status = (text) => { root.querySelector("#status").textContent = text; resize(); };
 
   try {
-    const context = await call("GET", "/context");
+    const context = await multica.context.get();
+    const renderHint = (flags) => {
+      root.querySelector("#hint").hidden = flags.show_hint !== true;
+      resize();
+    };
+    renderHint(await multica.flags.all());
+    root.dataset.contextShowHint = String(context.flags.show_hint ?? false);
+    root.dataset.flagChanges = "0";
+    const unsubscribe = multica.flags.onChange(async (flags) => {
+      renderHint(flags);
+      root.dataset.flagChanges = String(Number(root.dataset.flagChanges) + 1);
+      // The cached context follows pushes too, without another Action request.
+      const updatedContext = await multica.context.get();
+      root.dataset.contextShowHint = String(updatedContext.flags.show_hint ?? false);
+    });
+    window.addEventListener("pagehide", unsubscribe, { once: true });
     root.querySelector("#who").textContent =
       `${context.user.name} · ${context.workspace.name}` + (context.issue ? ` · ${context.issue.identifier}` : "");
 
@@ -105,3 +163,5 @@ async function start() {
   }
   resize();
 }
+
+start();

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plug } from "lucide-react";
 import { useFeatureEnabled } from "@multica/core/config";
-import { PLUGINS_V1_FLAG } from "@multica/core/feature-flags";
+import { contributionEnabled, featureFlagsOptions, type FeatureFlagsSnapshot, PLUGINS_V1_FLAG } from "@multica/core/feature-flags";
 import { useCurrentWorkspace } from "@multica/core/paths";
 import { pluginInstallationsOptions } from "@multica/core/plugins";
 import type { PluginInstallation, PluginSurface } from "@multica/core/types";
@@ -42,14 +42,14 @@ export function pluginModalKey(target: PluginModalTarget): string {
  * Exported for its own test: the filter is the product rule and belongs in one
  * place rather than re-derived by each menu that offers these.
  */
-export function collectModalSurfaces(installations: readonly PluginInstallation[]): PluginModalTarget[] {
+export function collectModalSurfaces(installations: readonly PluginInstallation[], resolved: FeatureFlagsSnapshot["resolved"] = {}): PluginModalTarget[] {
   const targets: PluginModalTarget[] = [];
   for (const installation of installations) {
     // Explicit === true: a backend that stops sending the field must read as
     // off, not as truthy enough to open a third party's UI.
     if (installation.enabled !== true) continue;
     for (const surface of installation.surfaces ?? []) {
-      if (surface.type === "modal") targets.push({ installation, surface });
+      if (contributionEnabled(surface.requires_flag, installation.plugin_key, resolved) && surface.type === "modal") targets.push({ installation, surface });
     }
   }
   return targets;
@@ -58,14 +58,15 @@ export function collectModalSurfaces(installations: readonly PluginInstallation[
 export function usePluginModalSurfaces(): PluginModalTarget[] {
   const pluginsEnabled = useFeatureEnabled(PLUGINS_V1_FLAG, false);
   const wsId = useCurrentWorkspace()?.id ?? "";
+  const { data: flags } = useQuery(featureFlagsOptions(wsId));
   const { data } = useQuery({
     ...pluginInstallationsOptions(wsId),
     enabled: pluginsEnabled && wsId.length > 0,
   });
 
   return useMemo(
-    () => (pluginsEnabled ? collectModalSurfaces(data?.plugins ?? []) : []),
-    [data, pluginsEnabled],
+    () => (pluginsEnabled ? collectModalSurfaces(data?.plugins ?? [], flags?.resolved) : []),
+    [data, pluginsEnabled, flags],
   );
 }
 
@@ -79,28 +80,34 @@ export function PluginModalSurface({ target, issueId, onOpenChange }: PluginModa
   // Same source as usePluginModalSurfaces above: a modal only ever opens from
   // the issue menu, which is inside the workspace route.
   const workspace = useCurrentWorkspace();
-  if (!target) return null;
+  const targets = usePluginModalSurfaces();
+  // The menu selection is an identity, not a retained authorization snapshot.
+  // A catalog refresh can disable, remove or replace the selected surface.
+  const currentTarget = target && targets.find(
+    (candidate) => pluginModalKey(candidate) === pluginModalKey(target),
+  );
+  if (!currentTarget) return null;
   return (
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plug className="size-4 text-muted-foreground" />
-            {target.surface.name}
+            {currentTarget.surface.name}
           </DialogTitle>
           {/* Names the plugin, always. Someone looking at a dialog full of
               third-party UI is entitled to know whose it is without guessing
               from the styling. */}
-          <DialogDescription>{target.installation.name}</DialogDescription>
+          <DialogDescription>{currentTarget.installation.name}</DialogDescription>
         </DialogHeader>
         <PluginSurfaceFrame
           // Keyed on the issue as well as the surface: the frame carries the
           // issue into its context call, and an unchanged document would not
           // reload for a different one.
-          key={`${pluginModalKey(target)}:${issueId ?? ""}`}
+          key={`${pluginModalKey(currentTarget)}:${issueId ?? ""}`}
           wsId={workspace?.id ?? ""}
-          installation={target.installation}
-          surface={target.surface}
+          installation={currentTarget.installation}
+          surface={currentTarget.surface}
           issueId={issueId}
         />
       </DialogContent>

@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { pluginInstallationsOptions } from "@multica/core/plugins";
 import { useCurrentWorkspace } from "@multica/core/paths";
 import { useFeatureEnabled } from "@multica/core/config";
-import { PLUGINS_V1_FLAG } from "@multica/core/feature-flags";
+import { contributionEnabled, featureFlagsOptions, PLUGINS_V1_FLAG } from "@multica/core/feature-flags";
 import { useT } from "../i18n";
 import { isDesktopShell } from "../platform/local-directory";
 import { PluginSurfaceFrame } from "./plugin-surface-frame";
@@ -25,6 +25,7 @@ export function PluginPanelSection({ issueId }: { issueId: string }) {
   const wsId = workspace?.id ?? "";
   const pluginsEnabled = useFeatureEnabled(PLUGINS_V1_FLAG, false);
 
+  const { data: flags } = useQuery(featureFlagsOptions(wsId));
   const { data } = useQuery({ ...pluginInstallationsOptions(wsId), enabled: pluginsEnabled && wsId.length > 0 });
 
   const panels = useMemo(() => {
@@ -33,13 +34,13 @@ export function PluginPanelSection({ issueId }: { issueId: string }) {
       .filter((installation) => installation.enabled === true)
       .flatMap((installation) =>
         installation.surfaces
-          .filter((surface) => surface.type === "issue_panel")
+          .filter((surface) => surface.type === "issue_panel" && contributionEnabled(surface.requires_flag, installation.plugin_key, flags?.resolved ?? {}))
           // An empty list means "anywhere"; a declared list is a filter, not a
           // hint, or a desktop-only panel renders on web anyway.
           .filter((surface) => (surface.platforms ?? []).length === 0 || (surface.platforms ?? []).includes(platform))
           .map((surface) => ({ installation, surface })),
       );
-  }, [data, platform]);
+  }, [data, platform, flags]);
 
   if (!pluginsEnabled || panels.length === 0) return null;
 

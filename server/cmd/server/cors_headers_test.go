@@ -22,7 +22,7 @@ func TestRouterCORSContract(t *testing.T) {
 		req := httptest.NewRequest(http.MethodOptions, "/api/config", nil)
 		req.Header.Set("Origin", origin)
 		req.Header.Set("Access-Control-Request-Method", http.MethodPost)
-		req.Header.Set("Access-Control-Request-Headers", "X-Client-Capabilities, Idempotency-Key")
+		req.Header.Set("Access-Control-Request-Headers", "X-Client-Capabilities, Idempotency-Key, X-Multica-Plugin-Surface")
 		rec := httptest.NewRecorder()
 
 		router.ServeHTTP(rec, req)
@@ -30,7 +30,7 @@ func TestRouterCORSContract(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("preflight status = %d, want %d", rec.Code, http.StatusOK)
 		}
-		for _, want := range []string{"X-Client-Capabilities", "Idempotency-Key"} {
+		for _, want := range []string{"X-Client-Capabilities", "Idempotency-Key", "X-Multica-Plugin-Surface"} {
 			if !headerListContains(rec.Header().Get("Access-Control-Allow-Headers"), want) {
 				t.Errorf("Access-Control-Allow-Headers = %q, missing %q", rec.Header().Get("Access-Control-Allow-Headers"), want)
 			}

@@ -241,6 +241,10 @@ func registerListeners(bus *events.Bus, b realtime.Broadcaster) {
 
 	// SubscribeAll handles workspace-broadcast for non-personal events.
 	bus.SubscribeAll(func(e events.Event) {
+		if e.Type == protocol.EventFeatureFlagChanged && e.RecipientUserID != "" {
+			sendToRecipient(b, e, e.RecipientUserID)
+			return
+		}
 		// Skip personal events — they are handled by type-specific listeners above.
 		if personalEvents[e.Type] {
 			return

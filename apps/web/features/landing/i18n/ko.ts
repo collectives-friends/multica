@@ -171,7 +171,7 @@ export function createKoDict(
         {
           title: "어디서든 셀프 호스팅",
           description:
-            "자체 인프라에서 Multica를 직접 운영하세요. Docker Compose, 단일 바이너리, Kubernetes를 지원하며, 워크스페이스 데이터는 여러분이 관리하는 서버에 저장됩니다.",
+            "자체 인프라에서 Multica를 직접 운영하세요. Docker Compose, 단일 바이너리, Kubernetes를 지원하며, 워크스페이스 데이터는 여러분이 관리하는 서버에 저장됩니다. 관리자는 재배포 없이 설정 → 기능에서 워크스페이스와 플러그인 기능을 관리할 수 있습니다.",
         },
         {
           title: "벤더 종속 없음",

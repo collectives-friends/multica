@@ -12,7 +12,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/featureflags"
 	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -121,7 +120,7 @@ func pluginHookScheduleScopes(
 	cache *pluginHookScheduleCache,
 ) ScopeProvider {
 	return func(ctx context.Context, _ time.Time) ([]Scope, error) {
-		if plugins == nil || !featureflags.PluginsV1Enabled(ctx, plugins.FeatureFlags) {
+		if plugins == nil || queries == nil {
 			cache.replace(map[string]pluginHookScheduleConfig{})
 			return nil, nil
 		}
@@ -229,7 +228,7 @@ func pluginHookScheduleHandler(
 		if err != nil {
 			return HandlerResult{}, fmt.Errorf("parse plugin hook schedule scope: %w", err)
 		}
-		if plugins == nil || !featureflags.PluginsV1Enabled(ctx, plugins.FeatureFlags) {
+		if plugins == nil || queries == nil {
 			return pluginHookScheduleSkipped("feature_disabled"), nil
 		}
 
@@ -262,7 +261,7 @@ func pluginHookScheduleHandler(
 			return pluginHookScheduleSkipped("manifest_changed"), nil
 		}
 
-		if plugins.HookBreakerOpen(ctx, installation.ID, hook.Key) {
+		if plugins.ContributionActive(ctx, installation, hook.RequiresFlag, "") && plugins.HookBreakerOpen(ctx, installation.ID, hook.Key) {
 			advancePluginHookNextRun(ctx, queries, row, in.PlanTime)
 			result := pluginHookScheduleSkipped("circuit_open")
 			result.Result["coalesced_occurrences"] = cache.takeCoalesced(in.Scope.ID, in.PlanTime)
@@ -280,6 +279,11 @@ func pluginHookScheduleHandler(
 			PlannedAt:    pgtype.Timestamptz{Time: in.PlanTime.UTC(), Valid: true},
 		}, in.Attempt)
 		if err != nil {
+			var pluginErr *service.PluginError
+			if errors.As(err, &pluginErr) && pluginErr.Kind == service.PluginErrorContributionDisabled {
+				advancePluginHookNextRun(ctx, queries, row, in.PlanTime)
+				return pluginHookScheduleSkipped("flag_off"), nil
+			}
 			if in.Job != nil && in.Attempt >= in.Job.MaxAttempts {
 				advancePluginHookNextRun(ctx, queries, row, in.PlanTime)
 				cache.takeCoalesced(in.Scope.ID, in.PlanTime)

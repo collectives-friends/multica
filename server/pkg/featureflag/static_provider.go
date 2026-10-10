@@ -26,6 +26,9 @@ import (
 // these tenants" — and keeping them separate makes the data easy to audit
 // in source control.
 type Rule struct {
+	// DefaultUnset preserves an omitted YAML default for workspace resolution.
+	// Programmatic rules retain their existing explicit Default behavior.
+	DefaultUnset bool
 	// Default is the value returned when no targeting rule matches.
 	Default bool
 
