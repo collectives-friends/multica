@@ -111,7 +111,7 @@ Version 2 adds `contributes.flags` and `requires_flag`. Existing version 1 plugi
 }
 ```
 
-A flag's optional `parent`, or a contribution's `requires_flag`, can reference one of the plugin's own keys or `host:<public_host_key>`. References to another plugin, private host flags, unknown keys, and parent cycles are rejected. A gate can be attached to surfaces, hooks, and resources. Backend checks apply to listing, surface launch and scripts, actions, hooks, MCP tools, and new skill resolutions.
+A flag's optional `parent`, or a contribution's `requires_flag`, can reference one of the plugin's own keys or `host:<public_host_key>`. References to another plugin, private host flags, unknown keys, and parent cycles are rejected. Every plugin flag also depends on `plugins_v1`, including flags with an explicit parent. A gate can be attached to surfaces, hooks, and resources. Backend checks apply to listing, surface launch and scripts, actions, hooks, MCP tools, and new skill resolutions.
 
 The full administration key is `plugin:<plugin_key>:<local_key>`, for example `plugin:ai.multica.hello-panel:beta_panel`. The flag registry uses the enabled installation's consented manifest snapshot. Publishing a new version alone never changes what an installed plugin runs.
 

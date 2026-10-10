@@ -175,13 +175,13 @@ func (h *Handler) GetPluginSurfaceLaunch(w http.ResponseWriter, r *http.Request)
 		writePluginError(w, err, "failed to load the Plugin")
 		return
 	}
-	if !h.PluginService.SurfaceActive(r.Context(), installation, chi.URLParam(r, "surfaceKey"), r.Header.Get("X-User-ID")) {
-		writeErrorCode(w, http.StatusForbidden, service.PluginContributionDisabled, "This plugin contribution is disabled")
-		return
-	}
 	script, err := h.PluginService.SurfaceScript(r.Context(), installation, chi.URLParam(r, "surfaceKey"))
 	if err != nil {
 		writePluginError(w, err, "failed to load the Plugin surface")
+		return
+	}
+	if !h.PluginService.SurfaceActive(r.Context(), installation, chi.URLParam(r, "surfaceKey"), r.Header.Get("X-User-ID")) {
+		writeErrorCode(w, http.StatusForbidden, service.PluginContributionDisabled, "This plugin contribution is disabled")
 		return
 	}
 	challenge, err := randomPluginSurfaceChallenge()
