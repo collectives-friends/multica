@@ -27,6 +27,13 @@ it.each([true, false])("reads an own constructor flag set to %s", async (value) 
   const { multica } = await sdk({ constructor: value });
   expect(await multica.flags.get("constructor", !value)).toBe(value);
 });
+it("reads own short keys and referenced host:<key> flags from context", async () => {
+  const { multica } = await sdk({ beta_panel: true, "host:plugins_v1": false });
+  expect(await multica.flags.get("beta_panel")).toBe(true);
+  expect(await multica.flags.get("host:plugins_v1", true)).toBe(false);
+  expect(await multica.flags.get("host:composio_mcp_apps")).toBe(false);
+  expect(await multica.flags.all()).toEqual({ beta_panel: true, "host:plugins_v1": false });
+});
 it("uses the fallback for a nonboolean context flag", async () => {
   const { multica } = await sdk(JSON.parse('{"beta":"enabled"}'));
   expect(await multica.flags.get("beta")).toBe(false);

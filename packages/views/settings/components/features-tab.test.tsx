@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   frozen: undefined as boolean | undefined,
   extraDefinitions: [] as FeatureFlagDefinition[],
   override: undefined as { enabled: boolean; locked: boolean } | undefined,
+  member: true,
 }));
 beforeEach(() => {
   state.role = "admin";
@@ -23,6 +24,7 @@ beforeEach(() => {
   state.frozen = undefined;
   state.extraDefinitions = [];
   state.override = undefined;
+  state.member = true;
   setFlag.mockClear();
 });
 const setFlag = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -50,7 +52,7 @@ vi.mock("@multica/core/api", () => ({
       },
       overrides: {
         workspace: state.override ? { beta: state.override } : {},
-        member: { beta: true },
+        member: { beta: state.member },
       },
     }),
     setFeatureFlag: setFlag,
@@ -94,7 +96,7 @@ it("offers personal reset and exactly five workspace choices to admins", async (
     }),
   );
   await userEvent.click(screen.getByRole("combobox", { name: "For whom" }));
-  expect(screen.getAllByRole("option")).toHaveLength(5);
+  expect(await screen.findAllByRole("option")).toHaveLength(5);
   await userEvent.click(
     await screen.findByRole("option", { name: "Off for everyone (locked)" }),
   );
@@ -152,6 +154,28 @@ it.each([
     );
   },
 );
+
+it.each([
+  [true, false],
+  [false, true],
+])("toggles a personal flag stored as %s to %s", async (stored, next) => {
+  state.role = "member";
+  state.member = stored;
+  state.value = stored;
+  state.source = "member";
+  render(<FeaturesTab />, { wrapper: Wrapper });
+  await screen.findByText("Beta panel");
+  const toggle = screen.getByRole("switch", { name: "My choice" });
+  expect(toggle).toHaveAttribute("aria-checked", String(stored));
+  await userEvent.click(toggle);
+  await waitFor(() =>
+    expect(setFlag).toHaveBeenCalledWith("ws", {
+      key: "beta",
+      scope: "member",
+      enabled: next,
+    }),
+  );
+});
 
 it("writes a member's personal choice without a workspace lock", async () => {
   state.role = "member";
