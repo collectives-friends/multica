@@ -80,30 +80,34 @@ export function PluginModalSurface({ target, issueId, onOpenChange }: PluginModa
   // Same source as usePluginModalSurfaces above: a modal only ever opens from
   // the issue menu, which is inside the workspace route.
   const workspace = useCurrentWorkspace();
-  const pluginsEnabled = useFeatureEnabled(PLUGINS_V1_FLAG, false);
-  const { data: flags } = useQuery(featureFlagsOptions(workspace?.id ?? ""));
-  if (!pluginsEnabled || !target || !contributionEnabled(target.surface.requires_flag, target.installation.plugin_key, flags?.resolved ?? {})) return null;
+  const targets = usePluginModalSurfaces();
+  // The menu selection is an identity, not a retained authorization snapshot.
+  // A catalog refresh can disable, remove or replace the selected surface.
+  const currentTarget = target && targets.find(
+    (candidate) => pluginModalKey(candidate) === pluginModalKey(target),
+  );
+  if (!currentTarget) return null;
   return (
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plug className="size-4 text-muted-foreground" />
-            {target.surface.name}
+            {currentTarget.surface.name}
           </DialogTitle>
           {/* Names the plugin, always. Someone looking at a dialog full of
               third-party UI is entitled to know whose it is without guessing
               from the styling. */}
-          <DialogDescription>{target.installation.name}</DialogDescription>
+          <DialogDescription>{currentTarget.installation.name}</DialogDescription>
         </DialogHeader>
         <PluginSurfaceFrame
           // Keyed on the issue as well as the surface: the frame carries the
           // issue into its context call, and an unchanged document would not
           // reload for a different one.
-          key={`${pluginModalKey(target)}:${issueId ?? ""}`}
+          key={`${pluginModalKey(currentTarget)}:${issueId ?? ""}`}
           wsId={workspace?.id ?? ""}
-          installation={target.installation}
-          surface={target.surface}
+          installation={currentTarget.installation}
+          surface={currentTarget.surface}
           issueId={issueId}
         />
       </DialogContent>
