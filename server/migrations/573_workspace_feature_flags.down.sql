@@ -1,0 +1,2 @@
+DROP TABLE workspace_feature_flag_audit;
+DROP TABLE workspace_feature_flag_override;
