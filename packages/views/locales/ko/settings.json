@@ -404,7 +404,8 @@
       "billing": "결제 및 요금제",
       "code": "코드",
       "channels": "메신저",
-      "apps": "연결된 앱"
+      "apps": "연결된 앱",
+      "features": "기능"
     },
     "groups": {
       "personal": "개인",
@@ -1426,5 +1427,44 @@
     "mcp": "관리자가 추가해 워크스페이스에서 공유하고, 에이전트별로 할당합니다.",
     "apps": "내 계정으로 Composio를 통해 승인하고, 내가 소유한 에이전트에서 사용합니다.",
     "plugins": "설치하면 도구, 예약 훅, 저장소를 추가할 수 있으며 플러그인마다 권한을 부여합니다."
+  },
+  "features": {
+    "title": "기능",
+    "search": "기능 검색",
+    "group": "그룹",
+    "state": "상태",
+    "all_groups": "모든 그룹",
+    "all_states": "모든 상태",
+    "on": "켜짐",
+    "off": "꺼짐",
+    "locked": "잠김",
+    "loading": "기능을 불러오는 중…",
+    "load_failed": "기능을 불러오지 못했습니다.",
+    "retry": "다시 시도",
+    "empty": "일치하는 기능이 없습니다",
+    "frozen": "이 호환성 기능은 항상 활성화됩니다.",
+    "deployment": "서버 설정에서 관리합니다.",
+    "parent_off": "{{parent}} 기능을 활성화해야 합니다.",
+    "workspace_locked": "워크스페이스 관리자가 잠갔습니다.",
+    "personal_source": "내 선택",
+    "workspace_source": "워크스페이스 선택",
+    "rule_source": "서버 대상 지정 규칙",
+    "default_source": "기능 기본값",
+    "my_choice": "내 선택",
+    "reset": "내 선택 초기화",
+    "for_whom": "적용 대상",
+    "history": "변경 내역",
+    "save_failed": "변경 사항을 저장하지 못했습니다.",
+    "no_history": "기록된 변경 사항이 없습니다",
+    "older": "이전 변경 사항",
+    "choices": {
+      "default": "기본값 사용",
+      "unlocked_on": "기본적으로 켜짐 (멤버가 선택 가능)",
+      "unlocked_off": "기본적으로 꺼짐 (멤버가 선택 가능)",
+      "locked_on": "모두 켜짐 (잠김)",
+      "locked_off": "모두 꺼짐 (잠김)"
+    },
+    "workspace_on": "기본적으로 켜짐",
+    "workspace_off": "기본적으로 꺼짐"
   }
 }

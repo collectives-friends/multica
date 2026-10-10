@@ -14,14 +14,16 @@ const data = vi.hoisted(() => ({
     digest: "abc",
   } as Record<string, unknown> | null,
   flagEnabled: true,
+  flags: {resolved: {} as Record<string,{value:boolean;source:string;locked:boolean}>},
 }));
 
 vi.mock("@tanstack/react-query", () => ({
+  queryOptions: <T,>(options: T) => options,
   // Two different queries reach this mock: the installation list and one
   // surface's code. They are told apart by the query key the options object
   // carries, so a test can make the code unavailable without touching the list.
   useQuery: (options: { queryKey?: readonly unknown[] }) =>
-    options?.queryKey?.[0] === "surface"
+    options?.queryKey?.[0] === "feature-flags" ? {data:data.flags, dataUpdatedAt:0} : options?.queryKey?.[0] === "surface"
       ? { data: data.launch, isPending: false, isError: data.launch === null }
       : { data: data.installed, isLoading: false, isError: false },
 }));
@@ -194,4 +196,14 @@ describe("PluginPanelSection", () => {
     expect(screen.queryByText("Hello Panel could not load its interface.")).not.toBeInTheDocument();
     expect(screen.getByTitle("Hello Panel — Hello").getAttribute("srcdoc")).not.toBe(originalDocument);
   });
+});
+
+it("unmounts an open panel when a parent change turns its required flag off",()=>{
+  data.installed.plugins=[installation({surfaces:[{key:"hello",type:"issue_panel",name:"Hello",entry:"ui/main.js",requires_flag:"beta"}]})];
+  data.flags={resolved:{"plugin:com.example.hello:beta":{value:true,source:"default",locked:false}}};
+  const {rerender}=render(<PluginPanelSection issueId="i1"/>,{wrapper:Wrapper});
+  expect(screen.getByTitle("Hello Panel — Hello")).toBeInTheDocument();
+  data.flags={resolved:{"plugin:com.example.hello:beta":{value:false,source:"parent:plugins_v1",locked:true}}};
+  rerender(<PluginPanelSection issueId="i1"/>);
+  expect(screen.queryByTitle("Hello Panel — Hello")).not.toBeInTheDocument();
 });

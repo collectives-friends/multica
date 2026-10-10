@@ -1,5 +1,8 @@
 "use client";
 
+import { featureFlagsOptions } from "@multica/core/feature-flags";
+import { AppLink } from "../../navigation";
+
 import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, CalendarClock, Loader2, Trash2, Upload } from "lucide-react";
@@ -583,6 +586,7 @@ function InstalledPlugin({
   return (
     <SettingsCard>
       <div className="space-y-4 px-4 py-4">
+        <PluginFeatureSummary wsId={wsId} installationId={installation.id} />
         {hasHooks ? <PluginHookActivity wsId={wsId} installationId={installation.id} /> : null}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
@@ -717,4 +721,13 @@ export function PluginsTab() {
       </SettingsSection>
     </SettingsTab>
   );
+}
+
+function PluginFeatureSummary({wsId,installationId}:{wsId:string;installationId:string}) {
+  const {t}=useT("settings");
+  const workspace=useCurrentWorkspace();
+  const {data}=useQuery(featureFlagsOptions(wsId));
+  const flags=data?.definitions?.filter(flag=>flag.plugin_installation_id === installationId) ?? [];
+  if (!flags.length || !workspace) return null;
+  return <div className="space-y-1 text-caption"><AppLink className="font-medium underline underline-offset-2" href={`/${workspace.slug}/settings?tab=features&section=${encodeURIComponent(flags[0]!.key)}`}>{t($=>$.features.title)}</AppLink>{flags.map(flag=><p key={flag.key}>{flag.label || flag.key}: {data?.resolved[flag.key]?.value ? t($=>$.features.on) : t($=>$.features.off)}</p>)}</div>;
 }

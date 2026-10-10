@@ -404,7 +404,8 @@
       "billing": "账单与套餐",
       "code": "代码",
       "channels": "消息渠道",
-      "apps": "已连接应用"
+      "apps": "已连接应用",
+      "features": "功能"
     },
     "groups": {
       "personal": "个人",
@@ -1426,5 +1427,44 @@
     "mcp": "由管理员添加、在工作区内共享，再按智能体分配。",
     "apps": "用你自己的账号通过 Composio 授权，在你拥有的智能体上启用。",
     "plugins": "安装后可提供工具、定时 hook 和存储，每个插件单独授权。"
+  },
+  "features": {
+    "title": "功能",
+    "search": "搜索功能",
+    "group": "分组",
+    "state": "状态",
+    "all_groups": "所有分组",
+    "all_states": "所有状态",
+    "on": "开启",
+    "off": "关闭",
+    "locked": "已锁定",
+    "loading": "正在加载功能…",
+    "load_failed": "无法加载功能。",
+    "retry": "重试",
+    "empty": "没有匹配的功能",
+    "frozen": "此兼容性功能始终启用。",
+    "deployment": "由服务器配置管理。",
+    "parent_off": "需要先启用 {{parent}}。",
+    "workspace_locked": "已由工作空间管理员锁定。",
+    "personal_source": "个人选择",
+    "workspace_source": "工作空间选择",
+    "rule_source": "服务器定向规则",
+    "default_source": "功能默认值",
+    "my_choice": "我的选择",
+    "reset": "重置我的选择",
+    "for_whom": "适用对象",
+    "history": "历史记录",
+    "save_failed": "无法保存更改。",
+    "no_history": "暂无更改记录",
+    "older": "更早的更改",
+    "choices": {
+      "default": "使用默认值",
+      "unlocked_on": "默认开启（成员可自行选择）",
+      "unlocked_off": "默认关闭（成员可自行选择）",
+      "locked_on": "全部开启（锁定）",
+      "locked_off": "全部关闭（锁定）"
+    },
+    "workspace_on": "默认开启",
+    "workspace_off": "默认关闭"
   }
 }

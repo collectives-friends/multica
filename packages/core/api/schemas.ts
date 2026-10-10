@@ -104,6 +104,7 @@ export const PluginConfigFieldSchema = z.object({
 }).loose();
 
 export const PluginSurfaceSchema = z.object({
+  requires_flag: z.string().optional(),
   key: z.string(),
   type: z.string().default(""),
   name: z.string().default(""),
@@ -112,6 +113,7 @@ export const PluginSurfaceSchema = z.object({
 }).loose();
 
 export const PluginHookSchema = z.object({
+  requires_flag: z.string().optional(),
   key: z.string(),
   name: z.string().default(""),
   description: z.string().default(""),
@@ -126,6 +128,7 @@ export const PluginHookSchema = z.object({
 }).loose();
 
 export const PluginResourceSchema = z.object({
+  requires_flag: z.string().optional(),
   type: z.string().default(""),
   key: z.string(),
   entry: z.string().default(""),

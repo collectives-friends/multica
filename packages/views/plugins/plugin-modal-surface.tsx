@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plug } from "lucide-react";
 import { useFeatureEnabled } from "@multica/core/config";
-import { PLUGINS_V1_FLAG } from "@multica/core/feature-flags";
+import { contributionEnabled, featureFlagsOptions, type FeatureFlagsSnapshot, PLUGINS_V1_FLAG } from "@multica/core/feature-flags";
 import { useCurrentWorkspace } from "@multica/core/paths";
 import { pluginInstallationsOptions } from "@multica/core/plugins";
 import type { PluginInstallation, PluginSurface } from "@multica/core/types";
@@ -42,14 +42,14 @@ export function pluginModalKey(target: PluginModalTarget): string {
  * Exported for its own test: the filter is the product rule and belongs in one
  * place rather than re-derived by each menu that offers these.
  */
-export function collectModalSurfaces(installations: readonly PluginInstallation[]): PluginModalTarget[] {
+export function collectModalSurfaces(installations: readonly PluginInstallation[], resolved: FeatureFlagsSnapshot["resolved"] = {}): PluginModalTarget[] {
   const targets: PluginModalTarget[] = [];
   for (const installation of installations) {
     // Explicit === true: a backend that stops sending the field must read as
     // off, not as truthy enough to open a third party's UI.
     if (installation.enabled !== true) continue;
     for (const surface of installation.surfaces ?? []) {
-      if (surface.type === "modal") targets.push({ installation, surface });
+      if (contributionEnabled(surface.requires_flag, installation.plugin_key, resolved) && surface.type === "modal") targets.push({ installation, surface });
     }
   }
   return targets;
@@ -58,14 +58,15 @@ export function collectModalSurfaces(installations: readonly PluginInstallation[
 export function usePluginModalSurfaces(): PluginModalTarget[] {
   const pluginsEnabled = useFeatureEnabled(PLUGINS_V1_FLAG, false);
   const wsId = useCurrentWorkspace()?.id ?? "";
+  const { data: flags } = useQuery(featureFlagsOptions(wsId));
   const { data } = useQuery({
     ...pluginInstallationsOptions(wsId),
     enabled: pluginsEnabled && wsId.length > 0,
   });
 
   return useMemo(
-    () => (pluginsEnabled ? collectModalSurfaces(data?.plugins ?? []) : []),
-    [data, pluginsEnabled],
+    () => (pluginsEnabled ? collectModalSurfaces(data?.plugins ?? [], flags?.resolved) : []),
+    [data, pluginsEnabled, flags],
   );
 }
 
@@ -79,7 +80,9 @@ export function PluginModalSurface({ target, issueId, onOpenChange }: PluginModa
   // Same source as usePluginModalSurfaces above: a modal only ever opens from
   // the issue menu, which is inside the workspace route.
   const workspace = useCurrentWorkspace();
-  if (!target) return null;
+  const pluginsEnabled = useFeatureEnabled(PLUGINS_V1_FLAG, false);
+  const { data: flags } = useQuery(featureFlagsOptions(workspace?.id ?? ""));
+  if (!pluginsEnabled || !target || !contributionEnabled(target.surface.requires_flag, target.installation.plugin_key, flags?.resolved ?? {})) return null;
   return (
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">

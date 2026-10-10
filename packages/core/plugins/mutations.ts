@@ -1,11 +1,15 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import type { PluginConfigRequest, PluginInstallRequest, PluginPreviewRequest } from "../types";
+import { featureFlagKeys } from "../feature-flags/queries";
 import { pluginKeys } from "./queries";
 
 function useInvalidatePlugins(wsId: string) {
   const queryClient = useQueryClient();
-  return () => queryClient.invalidateQueries({ queryKey: pluginKeys.all(wsId) });
+  return () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: pluginKeys.all(wsId) }),
+    queryClient.invalidateQueries({ queryKey: featureFlagKeys.all(wsId) }),
+  ]);
 }
 
 /**

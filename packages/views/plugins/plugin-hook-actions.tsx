@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2, Plug } from "lucide-react";
 import { toast } from "sonner";
 import { useFeatureEnabled } from "@multica/core/config";
-import { PLUGINS_V1_FLAG } from "@multica/core/feature-flags";
+import { contributionEnabled, featureFlagsOptions, type FeatureFlagsSnapshot, PLUGINS_V1_FLAG } from "@multica/core/feature-flags";
 import { useCurrentWorkspace } from "@multica/core/paths";
 import { pluginInstallationsOptions, useInvokePluginHook } from "@multica/core/plugins";
 import type { PluginHook, PluginInstallation } from "@multica/core/types";
@@ -41,14 +41,14 @@ export function pluginHookActionKey(action: PluginHookAction): string {
  * Exported for its own test: the filter is the product rule (enabled install,
  * manual declared) and belongs in one place rather than re-derived per menu.
  */
-export function collectManualHookActions(installations: readonly PluginInstallation[]): PluginHookAction[] {
+export function collectManualHookActions(installations: readonly PluginInstallation[], resolved: FeatureFlagsSnapshot["resolved"] = {}): PluginHookAction[] {
   const actions: PluginHookAction[] = [];
   for (const installation of installations) {
     // Explicit === true per the API compatibility rule: a backend that stops
     // sending the field must read as "off", not as "truthy enough".
     if (installation.enabled !== true) continue;
     for (const hook of installation.hooks ?? []) {
-      if ((hook.triggers ?? []).includes("manual")) actions.push({ installation, hook });
+      if (contributionEnabled(hook.requires_flag, installation.plugin_key, resolved) && (hook.triggers ?? []).includes("manual")) actions.push({ installation, hook });
     }
   }
   return actions;
@@ -57,14 +57,15 @@ export function collectManualHookActions(installations: readonly PluginInstallat
 export function usePluginHookActions(): PluginHookAction[] {
   const pluginsEnabled = useFeatureEnabled(PLUGINS_V1_FLAG, false);
   const wsId = useCurrentWorkspace()?.id ?? "";
+  const { data: flags } = useQuery(featureFlagsOptions(wsId));
   const { data } = useQuery({
     ...pluginInstallationsOptions(wsId),
     enabled: pluginsEnabled && wsId.length > 0,
   });
 
   return useMemo(
-    () => (pluginsEnabled ? collectManualHookActions(data?.plugins ?? []) : []),
-    [data, pluginsEnabled],
+    () => (pluginsEnabled ? collectManualHookActions(data?.plugins ?? [], flags?.resolved) : []),
+    [data, pluginsEnabled, flags],
   );
 }
 

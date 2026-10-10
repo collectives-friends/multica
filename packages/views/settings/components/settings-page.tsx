@@ -53,6 +53,7 @@ import { IssueStatusesTab } from "./issue-statuses-tab";
 import { PropertiesTab } from "./properties-tab";
 import { QuickActionsTab } from "./quick-actions-tab";
 import { KeyboardShortcutsTab } from "./keyboard-shortcuts-tab";
+import { FeaturesTab } from "./features-tab";
 import { PluginsTab } from "./plugins-tab";
 import { McpTab } from "./mcp-tab";
 import { BillingTab } from "./billing-tab";
@@ -186,6 +187,7 @@ export function SettingsPage({ extraDeviceTabs = [] }: SettingsPageProps = {}) {
             entry("workspace", t(($) => $.page.tabs.general), Settings, <WorkspaceTab />, {
               adminOnly: true,
             }),
+            entry("features", t(($) => $.page.tabs.features), SlidersHorizontal, <FeaturesTab />),
             entry("members", t(($) => $.page.tabs.members), Users, <MembersTab />, {
               adminOnly: true,
             }),

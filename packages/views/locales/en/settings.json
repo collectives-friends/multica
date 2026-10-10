@@ -405,7 +405,8 @@
       "billing": "Billing",
       "code": "Code",
       "channels": "Messaging",
-      "apps": "Connected apps"
+      "apps": "Connected apps",
+      "features": "Features"
     },
     "groups": {
       "personal": "Personal",
@@ -1436,5 +1437,44 @@
     "mcp": "Added by admins and shared across the workspace, then assigned per agent.",
     "apps": "Authorized with your own account through Composio and enabled on agents you own.",
     "plugins": "Installed packages that can add tools, scheduled hooks, and storage, each with its own permissions."
+  },
+  "features": {
+    "title": "Features",
+    "search": "Search features",
+    "group": "Group",
+    "state": "State",
+    "all_groups": "All groups",
+    "all_states": "All states",
+    "on": "On",
+    "off": "Off",
+    "locked": "Locked",
+    "loading": "Loading features…",
+    "load_failed": "Could not load features.",
+    "retry": "Retry",
+    "empty": "No matching features",
+    "frozen": "This compatibility feature is always enabled.",
+    "deployment": "Managed by the server configuration.",
+    "parent_off": "Requires {{parent}} to be enabled.",
+    "workspace_locked": "Locked by a workspace administrator.",
+    "personal_source": "Your personal choice",
+    "workspace_source": "Workspace choice",
+    "rule_source": "Server targeting rule",
+    "default_source": "Feature default",
+    "my_choice": "My choice",
+    "reset": "Reset my choice",
+    "for_whom": "For whom",
+    "history": "History",
+    "save_failed": "Could not save the change.",
+    "no_history": "No changes recorded",
+    "older": "Older changes",
+    "choices": {
+      "default": "Use default",
+      "unlocked_on": "On by default (members can choose)",
+      "unlocked_off": "Off by default (members can choose)",
+      "locked_on": "On for everyone (locked)",
+      "locked_off": "Off for everyone (locked)"
+    },
+    "workspace_on": "On by default",
+    "workspace_off": "Off by default"
   }
 }

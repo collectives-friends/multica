@@ -129,12 +129,12 @@ describe("useRealtimeSync — ws instance change", () => {
     // (16 workspace-scoped [incl. property definitions] + 6 per-issue
     // prefixes + the workspace working-agents projection + 5 per-chat
     // prefixes + 1 workspaceKeys.list() + 1 cross-workspace inbox unread
-    // summary = 31 calls).
+    // summary + flags + plugin installations = 33 calls).
     //
     // Awaited rather than counted synchronously: the inbox unread summary
     // refresh cancels any in-flight request before invalidating (see
     // onInboxSummaryInvalidate), so that one lands after the synchronous ones.
-    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(31));
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(33));
   });
 
   it("does not re-invalidate when rerendered with the same ws instance", () => {
@@ -639,4 +639,22 @@ describe("useRealtimeSync — member:removed", () => {
     // Let the relocate lookup settle before the test tears down.
     await waitFor(() => expect(qc.getQueryData(workspaceKeys.list())).toEqual([]));
   });
+});
+
+it("invalidates the full flag graph and plugin list for parent changes and reconnect, preserving open launches",async()=>{
+  const qc=new QueryClient(); const ws=createMockWs(); const stores=createStores();
+  qc.setQueryData(["feature-flags","ws-1"],{});
+  qc.setQueryData(["feature-flags","ws-other"],{});
+  qc.setQueryData(["workspaces","ws-1","plugins","installed"],{});
+  qc.setQueryData(["workspaces","ws-1","plugins","install-1","surface-launch"],{});
+  renderHook(()=>useRealtimeSync(ws,stores),{wrapper:createWrapper(qc)});
+  const emit=vi.mocked(ws.onAny).mock.calls[0]![0];
+  emit({type:"feature_flag:changed",payload:{workspace_id:"ws-1",key:"plugins_v1",scope_type:"workspace",action:"clear",enabled:null,locked:null}});
+  await waitFor(()=>expect(qc.getQueryState(["feature-flags","ws-1"])?.isInvalidated).toBe(true));
+  expect(qc.getQueryState(["workspaces","ws-1","plugins","installed"])?.isInvalidated).toBe(true);
+  expect(qc.getQueryState(["workspaces","ws-1","plugins","install-1","surface-launch"])?.isInvalidated).toBe(false);
+  expect(qc.getQueryState(["feature-flags","ws-other"])?.isInvalidated).toBe(false);
+  qc.setQueryData(["feature-flags","ws-1"],{});
+  await vi.mocked(ws.onReconnect).mock.calls[0]![0]();
+  await waitFor(()=>expect(qc.getQueryState(["feature-flags","ws-1"])?.isInvalidated).toBe(true));
 });

@@ -143,3 +143,19 @@ describe("surface bridge", () => {
     expect(mockCall).toHaveBeenCalledTimes(1);
   });
 });
+
+it("pushes only the plugin-limited context flags and stops after close", async () => {
+  const { bridge, posted } = connectedBridge();
+  mockCall.mockResolvedValue({ flags: { beta: true, "host:plugins_v1": true }, config: { unrelated: true } });
+  await bridge.refreshFlags();
+  await vi.waitFor(() => expect(posted).toContainEqual({ kind: "flags", flags: { beta: true, "host:plugins_v1": true } }));
+  expect(mockCall).toHaveBeenCalledWith("installation-1", {method:"GET",path:"/context",issueId:undefined});
+  bridge.close(); mockCall.mockClear();
+  await bridge.refreshFlags(); expect(mockCall).not.toHaveBeenCalled();
+});
+
+it("binds surface identity to the mounted surface rather than guest input",async()=>{
+  const {port}=connectedBridge({installationId:"installation-1",surfaceKey:"own-panel",bridgeToken:TOKEN});
+  port.postMessage({id:"spoof",kind:"action",method:"GET",path:"/context",surfaceKey:"other-panel"});
+  await vi.waitFor(()=>expect(mockCall).toHaveBeenCalledWith("installation-1",expect.objectContaining({surfaceKey:"own-panel"})));
+});

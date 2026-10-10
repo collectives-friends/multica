@@ -405,7 +405,8 @@
       "billing": "Facturation",
       "code": "Code",
       "channels": "Messagerie",
-      "apps": "Applications connectées"
+      "apps": "Applications connectées",
+      "features": "Fonctionnalités"
     },
     "groups": {
       "personal": "Personnel",
@@ -1436,5 +1437,44 @@
     "mcp": "Ajoutés par les administrateurs, partagés dans l'espace de travail puis attribués agent par agent.",
     "apps": "Autorisées avec votre propre compte via Composio et activées sur les agents qui vous appartiennent.",
     "plugins": "Paquets installés pouvant ajouter des outils, des hooks planifiés et du stockage, chacun avec ses propres autorisations."
+  },
+  "features": {
+    "title": "Fonctionnalités",
+    "search": "Rechercher des fonctionnalités",
+    "group": "Groupe",
+    "state": "État",
+    "all_groups": "Tous les groupes",
+    "all_states": "Tous les états",
+    "on": "Activé",
+    "off": "Désactivé",
+    "locked": "Verrouillé",
+    "loading": "Chargement des fonctionnalités…",
+    "load_failed": "Impossible de charger les fonctionnalités.",
+    "retry": "Réessayer",
+    "empty": "Aucune fonctionnalité correspondante",
+    "frozen": "Cette fonctionnalité de compatibilité est toujours activée.",
+    "deployment": "Géré par la configuration du serveur.",
+    "parent_off": "Nécessite l’activation de {{parent}}.",
+    "workspace_locked": "Verrouillé par un administrateur de l’espace de travail.",
+    "personal_source": "Votre choix personnel",
+    "workspace_source": "Choix de l’espace de travail",
+    "rule_source": "Règle de ciblage du serveur",
+    "default_source": "Valeur par défaut",
+    "my_choice": "Mon choix",
+    "reset": "Réinitialiser mon choix",
+    "for_whom": "Pour qui",
+    "history": "Historique",
+    "save_failed": "Impossible d’enregistrer la modification.",
+    "no_history": "Aucune modification enregistrée",
+    "older": "Modifications précédentes",
+    "choices": {
+      "default": "Utiliser la valeur par défaut",
+      "unlocked_on": "Activé par défaut (choix personnel autorisé)",
+      "unlocked_off": "Désactivé par défaut (choix personnel autorisé)",
+      "locked_on": "Activé pour tous (verrouillé)",
+      "locked_off": "Désactivé pour tous (verrouillé)"
+    },
+    "workspace_on": "Activé par défaut",
+    "workspace_off": "Désactivé par défaut"
   }
 }

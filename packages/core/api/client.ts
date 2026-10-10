@@ -1,3 +1,4 @@
+import { FeatureFlagsSchema, FeatureFlagAuditSchema, EMPTY_FEATURE_FLAGS, type FeatureFlagAudit } from "../feature-flags/schema";
 import type { ZodType } from "zod";
 import type { IssueWakeup, IssueWakeupInput, IssueWakeupSummaryRow, PausedWakeup, SystemWakeup, WakeupRun, WorkspaceSystemWakeup } from "../types/issue-wakeup";
 import type { WorkspaceWakeupPage, WorkspaceWakeupFilters } from "../types/issue-wakeup";
@@ -3017,6 +3018,40 @@ export class ApiClient {
     });
   }
 
+  async getFeatureFlags(workspaceId: string) {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/feature-flags`);
+    return parseWithFallback(raw, FeatureFlagsSchema, EMPTY_FEATURE_FLAGS, {
+      endpoint: "GET /api/workspaces/{id}/feature-flags",
+    });
+  }
+
+  async setFeatureFlag(
+    workspaceId: string,
+    input: { key: string; scope: "member" | "workspace"; enabled: boolean | null; locked?: boolean; reason?: string },
+  ): Promise<void> {
+    const path = `/api/workspaces/${workspaceId}/feature-flags/${encodeURIComponent(input.key)}${input.scope === "workspace" ? "/workspace" : ""}`;
+    if (input.enabled === null) {
+      await this.fetch(path, { method: "DELETE" });
+      return;
+    }
+    await this.fetch(path, {
+      method: "PUT",
+      body: JSON.stringify({
+        enabled: input.enabled,
+        ...(input.scope === "workspace" ? { locked: input.locked ?? false, reason: input.reason } : {}),
+      }),
+    });
+  }
+
+  async getFeatureFlagAudit(workspaceId: string, key: string, before?: string): Promise<FeatureFlagAudit> {
+    const params = new URLSearchParams({ key, limit: "50" });
+    if (before) params.set("before", before);
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/feature-flags/audit?${params}`);
+    return parseWithFallback(raw, FeatureFlagAuditSchema, { entries: [] } as FeatureFlagAudit, {
+      endpoint: "GET /api/workspaces/{id}/feature-flags/audit",
+    });
+  }
+
   async listPluginInstallations(workspaceId: string): Promise<PluginInstallationListResponse> {
     let raw: unknown;
     try {
@@ -3252,14 +3287,14 @@ export class ApiClient {
    */
   async callPluginAction(
     installationId: string,
-    request: { method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE"; path: string; body?: unknown; issueId?: string },
+    request: { method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE"; path: string; body?: unknown; issueId?: string; surfaceKey?: string },
   ): Promise<unknown> {
     const query = request.path === "/context" && request.issueId
       ? `?issue_id=${encodeURIComponent(request.issueId)}`
       : "";
     return this.fetch<unknown>(`/api/plugin-bridge/v1${request.path}${query}`, {
       method: request.method,
-      headers: { "X-Multica-Plugin-Installation": installationId },
+      headers: { "X-Multica-Plugin-Installation": installationId, ...(request.surfaceKey ? { "X-Multica-Plugin-Surface": request.surfaceKey } : {}) },
       body: request.body === undefined ? undefined : JSON.stringify(request.body),
     });
   }

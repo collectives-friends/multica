@@ -256,3 +256,9 @@ describe("AgentMcpTab", () => {
     ).toBeNull();
   });
 });
+
+// This suite checks feature-gate consumers. Scoped resolution is covered in core.
+vi.mock("@multica/core/config", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@multica/core/config")>();
+  return { ...actual, useFeatureEnabled: (key:string, fallback=false) => actual.useConfigStore(state=>state.featureFlags[key] ?? fallback) };
+});

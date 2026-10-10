@@ -163,3 +163,5 @@ describe("useActorName", () => {
     expect(result.current.hasActor("member", "departed-user")).toBe(false);
   });
 });
+
+vi.mock("../config",()=>({useFeatureEnabled:()=>false}));

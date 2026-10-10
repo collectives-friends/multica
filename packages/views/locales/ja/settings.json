@@ -404,7 +404,8 @@
       "billing": "請求とプラン",
       "code": "コード",
       "channels": "メッセージング",
-      "apps": "接続済みアプリ"
+      "apps": "接続済みアプリ",
+      "features": "機能"
     },
     "groups": {
       "personal": "個人",
@@ -1426,5 +1427,44 @@
     "mcp": "管理者が追加してワークスペースで共有し、エージェントごとに割り当てます。",
     "apps": "自分のアカウントで Composio 経由で承認し、自分が所有するエージェントで有効にします。",
     "plugins": "インストールするとツール、定期フック、ストレージを追加でき、プラグインごとに権限を付与します。"
+  },
+  "features": {
+    "title": "機能",
+    "search": "機能を検索",
+    "group": "グループ",
+    "state": "状態",
+    "all_groups": "すべてのグループ",
+    "all_states": "すべての状態",
+    "on": "オン",
+    "off": "オフ",
+    "locked": "ロック中",
+    "loading": "機能を読み込み中…",
+    "load_failed": "機能を読み込めませんでした。",
+    "retry": "再試行",
+    "empty": "一致する機能はありません",
+    "frozen": "この互換機能は常に有効です。",
+    "deployment": "サーバー設定で管理されています。",
+    "parent_off": "{{parent}} を有効にする必要があります。",
+    "workspace_locked": "ワークスペース管理者によってロックされています。",
+    "personal_source": "個人の選択",
+    "workspace_source": "ワークスペースの選択",
+    "rule_source": "サーバーの対象ルール",
+    "default_source": "機能の既定値",
+    "my_choice": "自分の選択",
+    "reset": "自分の選択をリセット",
+    "for_whom": "適用対象",
+    "history": "履歴",
+    "save_failed": "変更を保存できませんでした。",
+    "no_history": "変更履歴はありません",
+    "older": "以前の変更",
+    "choices": {
+      "default": "既定値を使用",
+      "unlocked_on": "既定でオン（メンバーが変更可能）",
+      "unlocked_off": "既定でオフ（メンバーが変更可能）",
+      "locked_on": "全員オン（ロック）",
+      "locked_off": "全員オフ（ロック）"
+    },
+    "workspace_on": "既定でオン",
+    "workspace_off": "既定でオフ"
   }
 }

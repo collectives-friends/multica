@@ -34,6 +34,7 @@ export function useSettingsSearchIndex(
   return useMemo(() => {
     const visible = new Set(pages.map((page) => page.value));
     const rows: SettingsSearchIndexEntry[] = [
+      { tab: "features", anchor: "features", title: t(($) => $.features.title), description: t(($) => $.features.search) },
       // Personal
       { tab: "profile", anchor: "avatar", title: t(($) => $.account.avatar_label) },
       { tab: "profile", anchor: "name", title: t(($) => $.account.name_label) },
