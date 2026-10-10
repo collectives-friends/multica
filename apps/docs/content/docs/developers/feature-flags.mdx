@@ -140,19 +140,19 @@ The [Hello Panel example](https://github.com/multica-ai/multica/tree/main/exampl
 
 ## CLI
 
-The CLI uses the configured profile, server, and workspace. `set` and `unset` target the workspace by default and require owner/admin authorization on the server.
+The CLI uses the configured profile, server, and workspace. `set` and `unset` change your personal override by default; `--workspace` changes the workspace override and requires owner/admin authorization on the server.
 
 ```sh
 multica feature list --group Integrations --state on
 multica feature list --plugin ai.multica.hello-panel --output json
 multica feature get plugin:ai.multica.hello-panel:beta_panel
-multica feature set plugin:ai.multica.hello-panel:beta_panel off --locked --reason "Pause rollout"
-multica feature set plugin:ai.multica.hello-panel:show_hint off --personal
-multica feature unset plugin:ai.multica.hello-panel:show_hint --personal
+multica feature set plugin:ai.multica.hello-panel:beta_panel off --workspace --locked --reason "Pause rollout"
+multica feature set plugin:ai.multica.hello-panel:show_hint off
+multica feature unset plugin:ai.multica.hello-panel:show_hint
 multica feature history plugin:ai.multica.hello-panel:beta_panel --output json
 ```
 
-`--locked` cannot be combined with `--personal`. Removing an override is different from setting it to off. The JSON list includes definitions, effective values, sources, and lock state; `get` includes the definition and stored overrides. Audit history preserves nullable old/new values and a pagination cursor.
+`--locked` and `--reason` require `--workspace`. Removing an override is different from setting it to off. The JSON list includes definitions, effective values, sources, and lock state; `get` includes the definition and stored overrides. `history` shows the current effective value and its source above the audit entries (`current` in JSON); audit entries preserve nullable old/new values and a pagination cursor.
 
 ## Compatibility and rollback
 

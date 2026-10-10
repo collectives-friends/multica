@@ -41,13 +41,13 @@ func newFeatureCommand() *cobra.Command {
 	list.Flags().String("output", "table", "Output format: table or json")
 	get := &cobra.Command{Use: "get <key>", Short: "Show a feature definition, effective value, and overrides", Args: exactArgs(1), RunE: runFeatureGet}
 	get.Flags().String("output", "json", "Output format: table or json")
-	set := &cobra.Command{Use: "set <key> on|off", Short: "Set a workspace override (or your personal override)", Args: exactArgs(2), RunE: runFeatureSet}
-	set.Flags().Bool("personal", false, "Set your personal override instead of the workspace override")
-	set.Flags().Bool("locked", false, "Lock the workspace value for all members")
-	set.Flags().String("reason", "", "Reason for the workspace override")
+	set := &cobra.Command{Use: "set <key> on|off", Short: "Set your personal override (or the workspace override)", Args: exactArgs(2), RunE: runFeatureSet}
+	set.Flags().Bool("workspace", false, "Set the workspace override for all members (owner/admin)")
+	set.Flags().Bool("locked", false, "Lock the workspace value for all members (requires --workspace)")
+	set.Flags().String("reason", "", "Reason for the workspace override (requires --workspace)")
 	set.Flags().String("output", "json", "Output format: table or json")
-	unset := &cobra.Command{Use: "unset <key>", Short: "Remove a workspace override (or your personal override)", Args: exactArgs(1), RunE: runFeatureUnset}
-	unset.Flags().Bool("personal", false, "Remove your personal override instead of the workspace override")
+	unset := &cobra.Command{Use: "unset <key>", Short: "Remove your personal override (or the workspace override)", Args: exactArgs(1), RunE: runFeatureUnset}
+	unset.Flags().Bool("workspace", false, "Remove the workspace override (owner/admin)")
 	unset.Flags().String("output", "json", "Output format: table or json")
 	history := &cobra.Command{Use: "history <key>", Short: "Show the audit history of a feature flag", Args: exactArgs(1), RunE: runFeatureHistory}
 	history.Flags().Int("limit", 50, "Maximum number of audit entries")
@@ -174,12 +174,12 @@ func runFeatureSet(cmd *cobra.Command, args []string) error {
 	if args[1] != "on" && args[1] != "off" {
 		return fmt.Errorf("feature state must be on or off")
 	}
-	personal, _ := cmd.Flags().GetBool("personal")
-	if personal && cmd.Flags().Changed("locked") {
-		return fmt.Errorf("--locked cannot be used with --personal")
+	workspace, _ := cmd.Flags().GetBool("workspace")
+	if !workspace && cmd.Flags().Changed("locked") {
+		return fmt.Errorf("--locked requires --workspace")
 	}
-	if personal && cmd.Flags().Changed("reason") {
-		return fmt.Errorf("--reason applies only to workspace overrides")
+	if !workspace && cmd.Flags().Changed("reason") {
+		return fmt.Errorf("--reason requires --workspace")
 	}
 	client, path, err := featureClient(cmd)
 	if err != nil {
@@ -188,7 +188,7 @@ func runFeatureSet(cmd *cobra.Command, args []string) error {
 	path += "/" + url.PathEscape(args[0])
 	body := map[string]any{"enabled": args[1] == "on"}
 	scope := "member"
-	if !personal {
+	if workspace {
 		scope = "workspace"
 		path += "/workspace"
 		body["locked"], _ = cmd.Flags().GetBool("locked")
@@ -202,7 +202,7 @@ func runFeatureSet(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("set feature override: %w", err)
 	}
 	result := map[string]any{"key": args[0], "scope": scope, "enabled": body["enabled"]}
-	if !personal {
+	if workspace {
 		result["locked"] = body["locked"]
 	}
 	if output, _ := cmd.Flags().GetString("output"); output == "json" {
@@ -217,10 +217,10 @@ func runFeatureUnset(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	personal, _ := cmd.Flags().GetBool("personal")
+	workspace, _ := cmd.Flags().GetBool("workspace")
 	path += "/" + url.PathEscape(args[0])
 	scope := "member"
-	if !personal {
+	if workspace {
 		scope = "workspace"
 		path += "/workspace"
 	}
@@ -251,9 +251,15 @@ func runFeatureHistory(cmd *cobra.Command, args []string) error {
 	}
 	ctx, cancel := cli.APIContext(cmd.Context())
 	defer cancel()
+	snapshot, err := loadFeatureSnapshot(ctx, client, path)
+	if err != nil {
+		return err
+	}
 	var result struct {
-		Entries    []map[string]any `json:"entries"`
-		NextBefore string           `json:"next_before,omitempty"`
+		// Current is the effective resolution; absent when the key is no longer defined.
+		Current    *featureResolution `json:"current,omitempty"`
+		Entries    []map[string]any   `json:"entries"`
+		NextBefore string             `json:"next_before,omitempty"`
 	}
 	if err := client.GetJSON(ctx, path+"/audit?"+params.Encode(), &result); err != nil {
 		return fmt.Errorf("get feature history: %w", err)
@@ -261,12 +267,18 @@ func runFeatureHistory(cmd *cobra.Command, args []string) error {
 	if result.Entries == nil {
 		return fmt.Errorf("invalid feature history response: missing entries")
 	}
+	if resolved, ok := snapshot.Resolved[args[0]]; ok && resolved.Value != nil {
+		result.Current = &resolved
+	}
 	if output, _ := cmd.Flags().GetString("output"); output == "json" {
 		return cli.PrintJSON(os.Stdout, result)
 	}
 	rows := make([][]string, 0, len(result.Entries))
 	for _, entry := range result.Entries {
 		rows = append(rows, []string{strVal(entry, "created_at"), strVal(entry, "scope_type"), strVal(entry, "action"), featureAuditState(entry["old_enabled"]), featureAuditState(entry["new_enabled"]), featureAuditState(entry["old_locked"]), featureAuditState(entry["new_locked"]), strVal(entry, "actor_type") + ":" + strVal(entry, "actor_id"), strVal(entry, "reason")})
+	}
+	if result.Current != nil {
+		fmt.Fprintf(os.Stdout, "State: %s  Source: %s  Locked: %t\n\n", featureState(*result.Current.Value), result.Current.Source, result.Current.Locked)
 	}
 	cli.PrintTable(os.Stdout, []string{"CREATED", "SCOPE", "ACTION", "OLD", "NEW", "OLD LOCK", "NEW LOCK", "ACTOR", "REASON"}, rows)
 	if result.NextBefore != "" {

@@ -58,8 +58,8 @@ Equivalent administration keys are
 
 ```sh
 multica feature list --plugin ai.multica.hello-panel
-multica feature set plugin:ai.multica.hello-panel:show_hint off
-multica feature unset plugin:ai.multica.hello-panel:show_hint
+multica feature set plugin:ai.multica.hello-panel:show_hint off --workspace
+multica feature unset plugin:ai.multica.hello-panel:show_hint --workspace
 ```
 
 The live scenario is covered by `e2e/plugin-feature-flags.spec.ts`. It publishes

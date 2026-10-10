@@ -132,10 +132,10 @@ func TestFeatureMutationsUseExplicitScopeAndExactBody(t *testing.T) {
 		method, path string
 		body         map[string]any
 	}{
-		{"workspace set", []string{"set", "board", "off", "--locked", "--reason", "Rollout paused"}, "PUT", "/board/workspace", map[string]any{"enabled": false, "locked": true, "reason": "Rollout paused"}},
-		{"personal set", []string{"set", "board", "on", "--personal"}, "PUT", "/board", map[string]any{"enabled": true}},
-		{"workspace unset", []string{"unset", "board"}, "DELETE", "/board/workspace", nil},
-		{"personal unset", []string{"unset", "board", "--personal"}, "DELETE", "/board", nil},
+		{"workspace set", []string{"set", "board", "off", "--workspace", "--locked", "--reason", "Rollout paused"}, "PUT", "/board/workspace", map[string]any{"enabled": false, "locked": true, "reason": "Rollout paused"}},
+		{"personal set", []string{"set", "board", "on"}, "PUT", "/board", map[string]any{"enabled": true}},
+		{"workspace unset", []string{"unset", "board", "--workspace"}, "DELETE", "/board/workspace", nil},
+		{"personal unset", []string{"unset", "board"}, "DELETE", "/board", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
@@ -172,8 +172,8 @@ func TestFeatureRejectsInvalidArgumentsWithoutRequests(t *testing.T) {
 	calls := 0
 	featureTestServer(t, func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(500) })
 	for _, args := range [][]string{
-		{"set", "board", "true"}, {"set", "board", "on", "--personal", "--locked"},
-		{"set", "board", "on", "--personal", "--reason", "ignored"},
+		{"set", "board", "true"}, {"set", "board", "on", "--locked"},
+		{"set", "board", "on", "--reason", "ignored"}, {"set", "board", "on", "--personal"},
 		{"list", "--state", "true"}, {"list", "--output", "yaml"},
 		{"set", "board"}, {"unset"}, {"get"}, {"list", "extra"}, {"history", "board", "--limit", "0"},
 	} {
@@ -188,6 +188,10 @@ func TestFeatureRejectsInvalidArgumentsWithoutRequests(t *testing.T) {
 
 func TestFeatureHistoryPreservesAuditAndCursor(t *testing.T) {
 	featureTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/workspaces/ws-1/feature-flags" {
+			_, _ = w.Write([]byte(featureFixture))
+			return
+		}
 		if r.Method != "GET" || r.URL.Path != "/api/workspaces/ws-1/feature-flags/audit" || r.URL.Query().Get("key") != "plugin:calendar:week" || r.URL.Query().Get("limit") != "12" || r.URL.Query().Get("before") != "2026-10-09T09:00:00Z" {
 			t.Errorf("request=%s %s", r.Method, r.URL)
 		}
@@ -201,8 +205,35 @@ func TestFeatureHistoryPreservesAuditAndCursor(t *testing.T) {
 	if err = json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got["next_before"] != "2026-10-08T09:00:00Z" || !strings.Contains(out, `"old_enabled": null`) || !strings.Contains(out, "Rollout paused") {
+	current, _ := got["current"].(map[string]any)
+	if got["next_before"] != "2026-10-08T09:00:00Z" || !strings.Contains(out, `"old_enabled": null`) || !strings.Contains(out, "Rollout paused") || current["source"] != "workspace_locked" || current["locked"] != true {
 		t.Fatalf("history=%s", out)
+	}
+}
+
+func TestFeatureHistoryShowsEffectiveSource(t *testing.T) {
+	for _, source := range []string{"parent:board", "deployment", "workspace_locked", "member", "workspace", "rule", "default", "frozen"} {
+		t.Run(source, func(t *testing.T) {
+			var paths []string
+			featureTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+				paths = append(paths, r.URL.Path+"?"+r.URL.RawQuery)
+				if r.URL.Path == "/api/workspaces/ws-1/feature-flags/audit" {
+					_, _ = w.Write([]byte(`{"entries":[{"scope_type":"workspace","action":"set","new_enabled":false,"actor_type":"user","actor_id":"user-1","created_at":"2026-10-08T09:00:00Z"}]}`))
+					return
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"definitions": []map[string]any{{"key": "board", "label": "Board"}},
+					"resolved":    map[string]any{"board": map[string]any{"value": false, "source": source, "locked": false}},
+				})
+			})
+			out, err := executeFeature(t, "history", "board")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out, "Source: "+source) || !strings.Contains(out, "workspace") || len(paths) != 2 || !strings.Contains(paths[1], "/audit?key=board") {
+				t.Fatalf("paths=%v output=%s", paths, out)
+			}
+		})
 	}
 }
 
