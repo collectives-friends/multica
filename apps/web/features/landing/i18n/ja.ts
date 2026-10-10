@@ -171,7 +171,7 @@ export function createJaDict(
         {
           title: "どこでもセルフホスト",
           description:
-            "自社のインフラで Multica を運用できます。Docker Compose、単一バイナリ、Kubernetes に対応。ワークスペースのデータは、自分で管理するサーバーに保存されます。",
+            "自社のインフラで Multica を運用できます。Docker Compose、単一バイナリ、Kubernetes に対応。ワークスペースのデータは、自分で管理するサーバーに保存されます。 管理者は再デプロイせずに「設定 → 機能」でワークスペースとプラグインの機能を管理できます。",
         },
         {
           title: "ベンダーロックインなし",

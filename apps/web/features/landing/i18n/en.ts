@@ -169,7 +169,7 @@ export function createEnDict(
       {
         title: "Self-host anywhere",
         description:
-          "Run Multica on your own infrastructure. Docker Compose, single binary, or Kubernetes — your workspace data stays on servers you control.",
+          "Run Multica on your own infrastructure. Docker Compose, single binary, or Kubernetes — your workspace data stays on servers you control. Admins can manage workspace and plugin features in Settings → Features, without redeploying.",
       },
       {
         title: "No vendor lock-in",

@@ -189,3 +189,38 @@ func TestFeatureFlagActorPermissionMatrix(t *testing.T) {
 		}
 	}
 }
+
+func TestFeatureFlagMemberAndWorkspaceCleanup(t *testing.T) {
+	ws := dbfx.Workspace(t, "Flag cleanup", "flag-cleanup")
+	dbfx.Member(t, ws, testUserID, "owner")
+	memberUser := dbfx.User(t, "Leaving member", "flag-leaving@example.test")
+	memberID := dbfx.Member(t, ws, memberUser, "member")
+	for _, scope := range []string{"workspace", "member"} {
+		scopeID := ws
+		if scope == "member" {
+			scopeID = memberUser
+		}
+		dbfx.Insert(t, "workspace_feature_flag_override", testutil.Cols{"workspace_id": ws, "scope_type": scope, "scope_id": scopeID, "flag_key": "plugins_v1", "enabled": true, "updated_by_type": "system"})
+	}
+	dbfx.Insert(t, "workspace_feature_flag_audit", testutil.Cols{"workspace_id": ws, "scope_type": "member", "scope_id": memberUser, "flag_key": "plugins_v1", "action": "set", "new_enabled": true, "actor_type": "member", "actor_id": memberUser})
+	if _, err := testHandler.revokeAndRemoveMember(context.Background(), parseUUID(ws), parseUUID(memberUser), parseUUID(memberID), parseUUID(testUserID)); err != nil {
+		t.Fatal(err)
+	}
+	var overrides, audits int
+	count := func() {
+		t.Helper()
+		if err := testPool.QueryRow(context.Background(), "SELECT (SELECT count(*) FROM workspace_feature_flag_override WHERE workspace_id=$1), (SELECT count(*) FROM workspace_feature_flag_audit WHERE workspace_id=$1)", ws).Scan(&overrides, &audits); err != nil {
+			t.Fatal(err)
+		}
+	}
+	count()
+	if overrides != 1 || audits != 1 {
+		t.Fatalf("member cleanup removed workspace value/history or left member: %d/%d", overrides, audits)
+	}
+	req := withURLParam(newRequest("DELETE", "/api/workspaces/"+ws, nil), "id", ws)
+	testutil.Call(t, testHandler.DeleteWorkspace, req).Want(204)
+	count()
+	if overrides != 0 || audits != 0 {
+		t.Fatalf("workspace cleanup left flag data: %d/%d", overrides, audits)
+	}
+}
