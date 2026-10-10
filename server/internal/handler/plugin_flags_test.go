@@ -171,7 +171,10 @@ func TestPluginFlagsInstallationPayloadFiltersContributionsForMember(t *testing.
 		t.Fatal(err)
 	}
 	manifest.Scopes = append(manifest.Scopes, "net:example.com")
-	manifest.Contributes.Hooks = []plugincontract.Hook{{Key: "review", Name: "Review", Description: "Review", RequiresFlag: "review", Triggers: []string{"manual"}, Transport: plugincontract.HookTransport{Type: "http", URL: "https://example.com/review"}}}
+	manifest.Contributes.Hooks = []plugincontract.Hook{
+		{Key: "review", Name: "Review", Description: "Review", RequiresFlag: "review", Triggers: []string{"manual", "agent"}, Transport: plugincontract.HookTransport{Type: "http", URL: "https://example.com/review"}},
+		{Key: "review_background", Name: "Background review", Description: "Review", RequiresFlag: "review", Triggers: []string{"agent"}, Transport: plugincontract.HookTransport{Type: "http", URL: "https://example.com/review"}},
+	}
 	manifest.Contributes.Resources = []plugincontract.Resource{{Type: "skill", Key: "review", Entry: "skills/review/SKILL.md", RequiresFlag: "review"}}
 	raw, _ := json.Marshal(manifest)
 	_, err = testHandler.Queries.UpdatePluginInstallationManifest(context.Background(), db.UpdatePluginInstallationManifestParams{ID: installation.ID, PackageVersionID: installation.PackageVersionID, Version: installation.Version, Manifest: raw, GrantedScopes: installation.GrantedScopes, Config: installation.Config})
@@ -191,8 +194,25 @@ func TestPluginFlagsInstallationPayloadFiltersContributionsForMember(t *testing.
 		t.Fatal(err)
 	}
 	rows := payload.Plugins
+	if len(rows) != 1 || len(rows[0].Surfaces) != 0 || len(rows[0].Hooks) != 1 || rows[0].Hooks[0].Key != "review_background" || len(rows[0].Resources) != 1 {
+		t.Fatalf("member preference must preserve workspace contributions: %+v", rows)
+	}
+	_, err = testHandler.Queries.UpsertFlagOverride(context.Background(), db.UpsertFlagOverrideParams{WorkspaceID: installation.WorkspaceID, ScopeType: "workspace", ScopeID: installation.WorkspaceID, FlagKey: service.PluginFlagKey(installation.PluginKey, "review"), Enabled: false, UpdatedByType: "member", UpdatedByID: parseUUID(testUserID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	testHandler.PluginService.FlagResolver.Invalidate(testWorkspaceID)
+	recorder = httptest.NewRecorder()
+	testHandler.ListPlugins(recorder, pluginHandlerRequest(http.MethodGet, "/plugins", nil, map[string]string{"id": testWorkspaceID}))
+	if recorder.Code != 200 {
+		t.Fatalf("workspace-off list=%d %s", recorder.Code, recorder.Body.String())
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	rows = payload.Plugins
 	if len(rows) != 1 || len(rows[0].Surfaces) != 0 || len(rows[0].Hooks) != 0 || len(rows[0].Resources) != 0 {
-		t.Fatalf("disabled contributions visible: %+v", rows)
+		t.Fatalf("workspace-disabled contributions visible: %+v", rows)
 	}
 }
 func TestPluginFlagsCallbackRejectsRemovedHook(t *testing.T) {

@@ -151,7 +151,14 @@ func (h *Handler) pluginInstallationPayload(ctx context.Context, installation db
 	userID := featureflag.EvalContextFrom(ctx).UserID
 	hooks := make([]pluginHookResponse, 0, len(manifest.Contributes.Hooks))
 	for _, hook := range manifest.Contributes.Hooks {
-		if !h.PluginService.ContributionActive(ctx, installation, hook.RequiresFlag, userID) {
+		hookUserID := ""
+		for _, trigger := range hook.Triggers {
+			if trigger == plugincontract.TriggerUI || trigger == plugincontract.TriggerManual {
+				hookUserID = userID
+				break
+			}
+		}
+		if !h.PluginService.ContributionActive(ctx, installation, hook.RequiresFlag, hookUserID) {
 			continue
 		}
 		response := pluginHookResponse{
@@ -182,7 +189,7 @@ func (h *Handler) pluginInstallationPayload(ctx context.Context, installation db
 	}
 	resources := make([]plugincontract.Resource, 0, len(manifest.Contributes.Resources))
 	for _, resource := range manifest.Contributes.Resources {
-		if h.PluginService.ContributionActive(ctx, installation, resource.RequiresFlag, userID) {
+		if h.PluginService.ContributionActive(ctx, installation, resource.RequiresFlag, "") {
 			resources = append(resources, resource)
 		}
 	}

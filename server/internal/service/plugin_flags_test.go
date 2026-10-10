@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/multica-ai/multica/server/internal/featureflags"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/featureflag"
@@ -15,13 +17,30 @@ type pluginFlagSource struct {
 	workspace   map[string]featureflags.Override
 	member      map[string]bool
 	definitions []featureflags.Definition
+	err         error
 }
 
 func (s pluginFlagSource) LoadWorkspace(context.Context, string) (map[string]featureflags.Override, []featureflags.Definition, error) {
-	return s.workspace, s.definitions, nil
+	return s.workspace, s.definitions, s.err
 }
 func (s pluginFlagSource) LoadMember(context.Context, string, string) (map[string]bool, error) {
 	return s.member, nil
+}
+
+func TestPluginSkillResolutionPreservesLookupErrors(t *testing.T) {
+	lookupErr := errors.New("installation lookup unavailable")
+	skill := db.Skill{PluginInstallationID: testInstallationID(t)}
+	s := &PluginService{Queries: db.New(scanErrDBTX{err: lookupErr})}
+	if active, err := s.ResolveSkillActive(context.Background(), skill); active || !errors.Is(err, lookupErr) {
+		t.Fatalf("lookup error must stop skill resolution: active=%v err=%v", active, err)
+	}
+	s.Queries = db.New(scanErrDBTX{err: pgx.ErrNoRows})
+	if active, err := s.ResolveSkillActive(context.Background(), skill); active || err != nil {
+		t.Fatalf("removed installation: active=%v err=%v", active, err)
+	}
+	if active, err := s.ResolveSkillActive(context.Background(), db.Skill{}); !active || err != nil {
+		t.Fatalf("user-owned skill: active=%v err=%v", active, err)
+	}
 }
 func flagTestPlugin(t *testing.T) db.PluginInstallation {
 	t.Helper()

@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/featureflags"
 	"github.com/multica-ai/multica/server/internal/util"
@@ -175,17 +177,44 @@ func (s *PluginService) ResourceActive(ctx context.Context, installation db.Plug
 	return false
 }
 
-// SkillActive is the task/claim integration point. User-owned skills pass;
-// plugin-owned skills must still belong to an active declared resource.
+// SkillActive is a fail-closed convenience gate. Task/claim assembly uses
+// ResolveSkillActive so infrastructure failures cannot yield a partial skillset.
 func (s *PluginService) SkillActive(ctx context.Context, skill db.Skill) bool {
+	active, err := s.ResolveSkillActive(ctx, skill)
+	return err == nil && active
+}
+
+// ResolveSkillActive distinguishes disabled/missing contributions from failures
+// loading the installation or workspace flag snapshot. User-owned skills pass.
+func (s *PluginService) ResolveSkillActive(ctx context.Context, skill db.Skill) (bool, error) {
 	if !skill.PluginInstallationID.Valid {
-		return true
+		return true, nil
 	}
 	installation, err := s.Queries.GetPluginInstallation(ctx, skill.PluginInstallationID)
-	if err != nil {
-		return false
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
 	}
-	return s.ResourceActive(ctx, installation, skill.Name)
+	if err != nil {
+		return false, fmt.Errorf("load skill plugin installation: %w", err)
+	}
+	if !installation.Enabled {
+		return false, nil
+	}
+	manifest, err := ParseInstallationManifest(installation)
+	if err != nil {
+		return false, err
+	}
+	for _, resource := range manifest.Contributes.Resources {
+		if resource.Type != "skill" || resource.Key != skill.Name {
+			continue
+		}
+		prepared, err := s.flagResolver().Prepare(ctx, uuidString(installation.WorkspaceID), "")
+		if err != nil {
+			return false, fmt.Errorf("load skill plugin feature flags: %w", err)
+		}
+		return s.ContributionActive(prepared, installation, resource.RequiresFlag, ""), nil
+	}
+	return false, nil
 }
 
 func validatePluginHostFlags(manifest plugincontract.Manifest) error {

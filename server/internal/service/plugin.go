@@ -775,6 +775,15 @@ func (s *PluginService) Uninstall(ctx context.Context, installation db.PluginIns
 	if err := queries.LockWorkspaceFlagWrites(ctx, uuidString(installation.WorkspaceID)); err != nil {
 		return err
 	}
+	// A delayed uninstall may refer to an installation replaced under the same
+	// plugin key. Its namespace now belongs to the new installation.
+	installation, err = queries.GetWorkspacePluginInstallation(ctx, db.GetWorkspacePluginInstallationParams{WorkspaceID: installation.WorkspaceID, ID: installation.ID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return &PluginError{Kind: PluginErrorUnavailable, Message: "reload plugin installation for uninstall", Err: err}
+	}
 	if err := clearPluginFlagOverrides(ctx, queries, installation, nil, "plugin_uninstall"); err != nil {
 		return err
 	}

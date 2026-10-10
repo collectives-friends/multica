@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -159,6 +160,79 @@ func TestPluginFlagLifecycleRetainsAuditAndUnchangedOverrides(t *testing.T) {
 		t.Fatalf("uninstall prefix cleanup: %+v %v", rows, err)
 	}
 }
+func TestPluginSkillResolutionPropagatesSnapshotAndManifestErrors(t *testing.T) {
+	ctx, s, _, w, u := pluginFlagsDB(t)
+	installation := publishFlagFixture(t, ctx, s, w, u, "1.0.0", true)
+	manifest, err := ParseInstallationManifest(installation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Contributes.Resources = []plugincontract.Resource{{Type: "skill", Key: "review", Entry: "skills/review/SKILL.md", RequiresFlag: "review"}}
+	raw, _ := json.Marshal(manifest)
+	params := db.UpdatePluginInstallationManifestParams{ID: installation.ID, PackageVersionID: installation.PackageVersionID, Version: installation.Version, Manifest: raw, GrantedScopes: installation.GrantedScopes, Config: installation.Config}
+	if _, err := s.Queries.UpdatePluginInstallationManifest(ctx, params); err != nil {
+		t.Fatal(err)
+	}
+	skill := db.Skill{Name: "review", PluginInstallationID: installation.ID}
+	snapshotErr := errors.New("flag snapshot unavailable")
+	s.FlagResolver = featureflags.NewResolver(featureflags.HostRegistry(), s.FeatureFlags, pluginFlagSource{err: snapshotErr})
+	if active, err := s.ResolveSkillActive(ctx, skill); active || !errors.Is(err, snapshotErr) {
+		t.Fatalf("snapshot error must stop skill resolution: active=%v err=%v", active, err)
+	}
+	key := PluginFlagKey(installation.PluginKey, "review")
+	s.FlagResolver = featureflags.NewResolver(featureflags.HostRegistry(), s.FeatureFlags, pluginFlagSource{member: map[string]bool{key: false}, definitions: []featureflags.Definition{{Key: key, Default: true, ScopePolicy: featureflags.MemberOverridable}}})
+	memberCtx, err := s.FlagResolver.Prepare(ctx, uuidString(w), uuidString(u))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active, err := s.ResolveSkillActive(memberCtx, skill); !active || err != nil {
+		t.Fatalf("skill must use workspace snapshot: active=%v err=%v", active, err)
+	}
+	params.Manifest = []byte(`{}`)
+	if _, err := s.Queries.UpdatePluginInstallationManifest(ctx, params); err != nil {
+		t.Fatal(err)
+	}
+	if active, err := s.ResolveSkillActive(ctx, skill); active || err == nil {
+		t.Fatalf("manifest error must stop skill resolution: active=%v err=%v", active, err)
+	}
+}
+
+func TestPluginFlagStaleUninstallPreservesReinstalledOverrides(t *testing.T) {
+	ctx, s, tx, w, u := pluginFlagsDB(t)
+	old := publishFlagFixture(t, ctx, s, w, u, "1.0.0", true)
+	if err := s.Uninstall(ctx, old); err != nil {
+		t.Fatal(err)
+	}
+	current, err := s.InstallPlugin(ctx, w, u, uuidString(old.PackageVersionID), decodeScopes(old.GrantedScopes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.ID == old.ID {
+		t.Fatal("reinstall reused installation ID")
+	}
+	key := PluginFlagKey(current.PluginKey, "review")
+	overrideFlagFixture(t, ctx, s, w, u, key, false, "workspace")
+	params := db.GetFlagOverrideParams{WorkspaceID: w, ScopeType: "workspace", ScopeID: w, FlagKey: key}
+	before, err := s.Queries.GetFlagOverride(ctx, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Uninstall(ctx, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Queries.GetWorkspacePluginInstallation(ctx, db.GetWorkspacePluginInstallationParams{WorkspaceID: w, ID: current.ID}); err != nil {
+		t.Fatal("stale uninstall removed current installation", err)
+	}
+	after, err := s.Queries.GetFlagOverride(ctx, params)
+	if err != nil || before != after {
+		t.Fatalf("stale uninstall changed current override: before=%+v after=%+v err=%v", before, after, err)
+	}
+	var count int
+	if err := tx.QueryRow(ctx, "SELECT count(*) FROM workspace_feature_flag_audit WHERE workspace_id=$1 AND action='clear'", w).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("stale uninstall clear audits=%d err=%v", count, err)
+	}
+}
+
 func TestPluginFlagGatesAgentToolsAndRecordsRefusedAttempt(t *testing.T) {
 	ctx, s, _, w, u := pluginFlagsDB(t)
 	installation := publishFlagFixture(t, ctx, s, w, u, "1.0.0", true)
