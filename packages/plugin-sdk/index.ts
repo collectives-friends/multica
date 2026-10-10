@@ -31,6 +31,8 @@ export interface PluginContext {
   config: Record<string, unknown>;
   /** Domains this installation was granted via `net:` scopes. */
   granted_net_domains: string[];
+  /** Own short keys and referenced public host:<key> values. */
+  flags?: Record<string, boolean>;
 }
 
 export interface Issue {
@@ -118,7 +120,8 @@ class Bridge {
   private onPortMessage = (event: MessageEvent) => {
     const message = event.data;
     if (isBridgeEvent(message)) {
-      this.applyTheme(message.theme);
+      if (message.kind === "theme") this.applyTheme(message.theme);
+      else applyFlags(message.flags);
       return;
     }
     if (!isBridgeResponse(message)) return;
@@ -167,6 +170,16 @@ class Bridge {
   }
 }
 
+let latestFlags: Record<string, boolean> | null = null;
+let flagsRevision = 0;
+const flagListeners = new Set<(flags: Readonly<Record<string, boolean>>) => void>();
+function applyFlags(flags: Record<string, boolean>) {
+  latestFlags = { ...flags };
+  flagsRevision++;
+  if (cachedContext) cachedContext = { ...cachedContext, flags: { ...latestFlags } };
+  for (const listener of flagListeners) listener({ ...latestFlags });
+}
+
 const bridge = new Bridge();
 
 function storageApi(scope: "workspace" | "user") {
@@ -201,8 +214,27 @@ export const multica = {
     /** Who is looking, where, and which issue this surface is mounted on. */
     async get(force = false): Promise<PluginContext> {
       if (cachedContext && !force) return cachedContext;
-      cachedContext = await bridge.request<PluginContext>("GET", "/context");
+      const revision = flagsRevision;
+      const context = await bridge.request<PluginContext>("GET", "/context");
+      // A push may precede the first read or arrive while it is in flight.
+      if (latestFlags === null || (force && revision === flagsRevision)) latestFlags = { ...(context.flags ?? {}) };
+      cachedContext = { ...context, flags: { ...latestFlags } };
       return cachedContext;
+    },
+  },
+
+  flags: {
+    async get(key: string, fallback = false): Promise<boolean> {
+      return (await multica.flags.all())[key] ?? fallback;
+    },
+    async all(): Promise<Record<string, boolean>> {
+      if (latestFlags === null) await multica.context.get();
+      return { ...latestFlags };
+    },
+    onChange(listener: (flags: Readonly<Record<string, boolean>>) => void): () => void {
+      flagListeners.add(listener);
+      if (latestFlags !== null) listener({ ...latestFlags });
+      return () => { flagListeners.delete(listener); };
     },
   },
 

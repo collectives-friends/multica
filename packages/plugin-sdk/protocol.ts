@@ -51,7 +51,7 @@ export type BridgeResponse =
   | { id: string; ok: false; status: number; error: string };
 
 /** Host-initiated, unsolicited: theme changes while the surface is mounted. */
-export type BridgeEvent = { kind: "theme"; theme: ThemeTokens };
+export type BridgeEvent = { kind: "theme"; theme: ThemeTokens } | { kind: "flags"; flags: Record<string, boolean> };
 
 export type BridgeMessage = BridgeResponse | BridgeEvent;
 
@@ -63,7 +63,9 @@ export function isBridgeResponse(message: unknown): message is BridgeResponse {
 
 export function isBridgeEvent(message: unknown): message is BridgeEvent {
   if (typeof message !== "object" || message === null) return false;
-  return (message as Record<string, unknown>).kind === "theme";
+  const candidate = message as Record<string, unknown>;
+  if (candidate.kind === "theme") return true;
+  return candidate.kind === "flags" && typeof candidate.flags === "object" && candidate.flags !== null && !Array.isArray(candidate.flags) && Object.values(candidate.flags).every(value => typeof value === "boolean");
 }
 
 export function isBridgeRequest(message: unknown): message is BridgeRequest {
