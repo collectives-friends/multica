@@ -1452,7 +1452,7 @@
     "load_failed": "Impossible de charger les fonctionnalités.",
     "retry": "Réessayer",
     "empty": "Aucune fonctionnalité correspondante",
-    "frozen": "Cette fonctionnalité de compatibilité est toujours activée.",
+    "frozen": "Cette fonctionnalité de compatibilité est fixée par le serveur.",
     "deployment": "Géré par la configuration du serveur.",
     "parent_off": "Nécessite l’activation de {{parent}}.",
     "workspace_locked": "Verrouillé par un administrateur de l’espace de travail.",
@@ -1475,6 +1475,10 @@
       "locked_off": "Désactivé pour tous (verrouillé)"
     },
     "workspace_on": "Activé par défaut",
-    "workspace_off": "Désactivé par défaut"
+    "workspace_off": "Désactivé par défaut",
+    "forced_on": "Activation imposée",
+    "forced_off": "Désactivation imposée",
+    "workspace_default": "Par défaut dans l’espace de travail : {{state}}",
+    "off_parent": "Désactivé (parent)"
   }
 }

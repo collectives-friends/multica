@@ -1442,7 +1442,7 @@
     "load_failed": "機能を読み込めませんでした。",
     "retry": "再試行",
     "empty": "一致する機能はありません",
-    "frozen": "この互換機能は常に有効です。",
+    "frozen": "この互換性機能はサーバーによって固定されています。",
     "deployment": "サーバー設定で管理されています。",
     "parent_off": "{{parent}} を有効にする必要があります。",
     "workspace_locked": "ワークスペース管理者によってロックされています。",
@@ -1465,6 +1465,10 @@
       "locked_off": "全員オフ（ロック）"
     },
     "workspace_on": "既定でオン",
-    "workspace_off": "既定でオフ"
+    "workspace_off": "既定でオフ",
+    "forced_on": "強制オン",
+    "forced_off": "強制オフ",
+    "workspace_default": "ワークスペースの既定値：{{state}}",
+    "off_parent": "オフ（親機能）"
   }
 }

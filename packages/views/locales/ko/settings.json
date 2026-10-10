@@ -1442,7 +1442,7 @@
     "load_failed": "기능을 불러오지 못했습니다.",
     "retry": "다시 시도",
     "empty": "일치하는 기능이 없습니다",
-    "frozen": "이 호환성 기능은 항상 활성화됩니다.",
+    "frozen": "이 호환성 기능은 서버에서 고정됩니다.",
     "deployment": "서버 설정에서 관리합니다.",
     "parent_off": "{{parent}} 기능을 활성화해야 합니다.",
     "workspace_locked": "워크스페이스 관리자가 잠갔습니다.",
@@ -1465,6 +1465,10 @@
       "locked_off": "모두 꺼짐 (잠김)"
     },
     "workspace_on": "기본적으로 켜짐",
-    "workspace_off": "기본적으로 꺼짐"
+    "workspace_off": "기본적으로 꺼짐",
+    "forced_on": "강제 켜짐",
+    "forced_off": "강제 꺼짐",
+    "workspace_default": "워크스페이스 기본값: {{state}}",
+    "off_parent": "꺼짐 (상위 기능)"
   }
 }

@@ -2,7 +2,19 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiClient } from "../api/client";
 import { featureFlagState, contributionEnabled } from "./state";
-import { EMPTY_FEATURE_FLAGS } from "./schema";
+import { EMPTY_FEATURE_FLAGS, FeatureFlagDefinitionSchema } from "./schema";
+
+it("distinguishes an editable definition from a flag frozen off", () => {
+  expect(
+    FeatureFlagDefinitionSchema.parse({ key: "editable" }).frozen,
+  ).toBeUndefined();
+  expect(
+    FeatureFlagDefinitionSchema.parse({ key: "frozen-off", frozen: false }).frozen,
+  ).toBe(false);
+  expect(
+    FeatureFlagDefinitionSchema.parse({ key: "frozen-on", frozen: true }).frozen,
+  ).toBe(true);
+});
 
 describe("workspace flags", () => {
   it("never uses deployment defaults while waiting for a workspace", () => {

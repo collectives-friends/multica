@@ -9,7 +9,7 @@ export const FeatureFlagDefinitionSchema = z.object({
   scope_policy: z.string().default("workspace_only"),
   parent: z.string().optional(),
   public: z.boolean().default(false),
-  frozen: z.boolean().default(false),
+  frozen: z.boolean().optional(),
   plugin_installation_id: z.string().optional(),
   plugin_name: z.string().optional(),
 });

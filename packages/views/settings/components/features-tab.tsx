@@ -11,6 +11,7 @@ import {
   type FeatureFlagsSnapshot,
 } from "@multica/core/feature-flags";
 import { Button } from "@multica/ui/components/ui/button";
+import { Badge } from "@multica/ui/components/ui/badge";
 import { Input } from "@multica/ui/components/ui/input";
 import { Switch } from "@multica/ui/components/ui/switch";
 import {
@@ -40,11 +41,16 @@ export function FeaturesTab() {
   const [state, setState] = useState("all");
   const groups = [
     ...new Set(
-      query.data?.definitions.map((d) =>
-        d.plugin_installation_id
-          ? `plugin:${d.plugin_installation_id}`
-          : d.group,
-      ) ?? [],
+      [...(query.data?.definitions ?? [])]
+        .sort(
+          (a, b) =>
+            Number(!!a.plugin_installation_id) - Number(!!b.plugin_installation_id),
+        )
+        .map((d) =>
+          d.plugin_installation_id
+            ? `plugin:${d.plugin_installation_id}`
+            : d.group,
+        ),
     ),
   ];
   const groupLabel = (value: string) =>
@@ -195,15 +201,28 @@ function FeatureRow({
   const resolved = snapshot.resolved[d.key];
   const override = snapshot.overrides.workspace[d.key];
   const source = resolved?.source ?? "default";
-  const immutable = d.frozen || source === "deployment" || source === "frozen";
+  const frozen = d.frozen !== undefined || source === "frozen";
+  const immutable = frozen || source === "deployment";
   const parentOff = source.startsWith("parent:");
+  const valueLabel = resolved?.value
+    ? t(($) => $.features.on)
+    : t(($) => $.features.off);
+  const stateLabel = parentOff
+    ? t(($) => $.features.off_parent)
+    : immutable || resolved?.locked
+      ? resolved?.value
+        ? t(($) => $.features.forced_on)
+        : t(($) => $.features.forced_off)
+      : source === "workspace"
+        ? t(($) => $.features.workspace_default, { state: valueLabel })
+        : valueLabel;
   const personalDisabled =
     immutable || parentOff || resolved?.locked || mutation.isPending;
   const forWhom = !override
     ? "default"
     : `${override.locked ? "locked" : "unlocked"}_${override.enabled ? "on" : "off"}`;
   const reason =
-    d.frozen || source === "frozen"
+    frozen
       ? t(($) => $.features.frozen)
       : source === "deployment"
         ? t(($) => $.features.deployment)
@@ -235,9 +254,9 @@ function FeatureRow({
             {d.key}
           </p>
         </div>
-        <span>
-          {resolved?.value ? t(($) => $.features.on) : t(($) => $.features.off)}
-        </span>
+        <Badge variant="secondary" className="self-start">
+          {stateLabel}
+        </Badge>
       </div>
       <p className="text-caption text-muted-foreground">{reason}</p>
       <div className="flex flex-wrap items-center gap-3">

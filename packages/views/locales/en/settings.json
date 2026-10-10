@@ -1452,7 +1452,7 @@
     "load_failed": "Could not load features.",
     "retry": "Retry",
     "empty": "No matching features",
-    "frozen": "This compatibility feature is always enabled.",
+    "frozen": "This compatibility feature is fixed by the server.",
     "deployment": "Managed by the server configuration.",
     "parent_off": "Requires {{parent}} to be enabled.",
     "workspace_locked": "Locked by a workspace administrator.",
@@ -1475,6 +1475,10 @@
       "locked_off": "Off for everyone (locked)"
     },
     "workspace_on": "On by default",
-    "workspace_off": "Off by default"
+    "workspace_off": "Off by default",
+    "forced_on": "Forced on",
+    "forced_off": "Forced off",
+    "workspace_default": "Workspace default: {{state}}",
+    "off_parent": "Off (parent)"
   }
 }

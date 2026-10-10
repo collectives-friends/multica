@@ -1442,7 +1442,7 @@
     "load_failed": "无法加载功能。",
     "retry": "重试",
     "empty": "没有匹配的功能",
-    "frozen": "此兼容性功能始终启用。",
+    "frozen": "此兼容性功能由服务器固定。",
     "deployment": "由服务器配置管理。",
     "parent_off": "需要先启用 {{parent}}。",
     "workspace_locked": "已由工作空间管理员锁定。",
@@ -1465,6 +1465,10 @@
       "locked_off": "全部关闭（锁定）"
     },
     "workspace_on": "默认开启",
-    "workspace_off": "默认关闭"
+    "workspace_off": "默认关闭",
+    "forced_on": "强制开启",
+    "forced_off": "强制关闭",
+    "workspace_default": "工作区默认值：{{state}}",
+    "off_parent": "关闭（上级功能）"
   }
 }
