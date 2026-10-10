@@ -175,7 +175,7 @@ func TestParseManifestRejectsMalformedDocuments(t *testing.T) {
 		},
 		{
 			"wrong manifest version",
-			mutate(t, func(doc map[string]any) { doc["manifest_version"] = 2 }),
+			mutate(t, func(doc map[string]any) { doc["manifest_version"] = 3 }),
 			"manifest_version",
 		},
 		{

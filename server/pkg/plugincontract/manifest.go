@@ -27,8 +27,9 @@ import (
 )
 
 const (
-	// ManifestVersion1 is the only manifest version this host understands.
+	// Supported manifest versions. Version 2 adds feature flags.
 	ManifestVersion1 = 1
+	ManifestVersion2 = 2
 
 	// ManifestFilename is the conventional file name inside a plugin package.
 	ManifestFilename = "multica.plugin.json"
@@ -193,33 +194,36 @@ type Author struct {
 }
 
 type Contributes struct {
-	Surfaces  []Surface  `json:"surfaces,omitempty"`
-	Hooks     []Hook     `json:"hooks,omitempty"`
-	Resources []Resource `json:"resources,omitempty"`
+	Flags     []FlagDefinition `json:"flags,omitempty"`
+	Surfaces  []Surface        `json:"surfaces,omitempty"`
+	Hooks     []Hook           `json:"hooks,omitempty"`
+	Resources []Resource       `json:"resources,omitempty"`
 }
 
 // Surface is a host-mounted iframe. The host owns where it appears; the plugin
 // owns what renders inside it.
 type Surface struct {
-	Key       string   `json:"key"`
-	Type      string   `json:"type"`
-	Name      string   `json:"name"`
-	Entry     string   `json:"entry"`
-	Platforms []string `json:"platforms,omitempty"`
+	RequiresFlag string   `json:"requires_flag,omitempty"`
+	Key          string   `json:"key"`
+	Type         string   `json:"type"`
+	Name         string   `json:"name"`
+	Entry        string   `json:"entry"`
+	Platforms    []string `json:"platforms,omitempty"`
 }
 
 // Hook is one plugin-side capability. Triggers say who may invoke it; the host
 // never invents a call site that is not listed here.
 type Hook struct {
-	Key         string          `json:"key"`
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"input_schema,omitempty"`
-	Triggers    []string        `json:"triggers"`
-	Events      []string        `json:"events,omitempty"`
-	Schedule    *HookSchedule   `json:"schedule,omitempty"`
-	Transport   HookTransport   `json:"transport"`
-	TimeoutMs   int             `json:"timeout_ms,omitempty"`
+	RequiresFlag string          `json:"requires_flag,omitempty"`
+	Key          string          `json:"key"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	InputSchema  json.RawMessage `json:"input_schema,omitempty"`
+	Triggers     []string        `json:"triggers"`
+	Events       []string        `json:"events,omitempty"`
+	Schedule     *HookSchedule   `json:"schedule,omitempty"`
+	Transport    HookTransport   `json:"transport"`
+	TimeoutMs    int             `json:"timeout_ms,omitempty"`
 }
 
 // HookSchedule declares the one automatic cadence attached to a hook. Multiple
@@ -238,9 +242,10 @@ type HookTransport struct {
 // Resource is a static contribution. No call happens in either direction, so a
 // resource is not a hook.
 type Resource struct {
-	Type  string `json:"type"`
-	Key   string `json:"key"`
-	Entry string `json:"entry"`
+	RequiresFlag string `json:"requires_flag,omitempty"`
+	Type         string `json:"type"`
+	Key          string `json:"key"`
+	Entry        string `json:"entry"`
 }
 
 // ConfigField is one host-rendered configuration input. Secrets are stored
@@ -354,7 +359,7 @@ func (c *ConfigSchema) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
-// ParseManifest decodes a strict v1 manifest and returns the canonical bytes an
+// ParseManifest decodes a strict versioned manifest and returns the canonical bytes an
 // installation stores as its consented snapshot. Unknown fields fail instead of
 // being ignored so a typo cannot silently weaken what the administrator
 // approved.
@@ -366,6 +371,25 @@ func ParseManifest(raw []byte) (Manifest, []byte, error) {
 		return Manifest{}, nil, fmt.Errorf("plugin manifest exceeds %d bytes", MaxManifestSize)
 	}
 
+	var header struct {
+		ManifestVersion int `json:"manifest_version"`
+	}
+	headerDecoder := json.NewDecoder(bytes.NewReader(raw))
+	if err := headerDecoder.Decode(&header); err != nil {
+		return Manifest{}, nil, fmt.Errorf("decode plugin manifest: %w", err)
+	}
+	if err := rejectTrailingJSON(headerDecoder); err != nil {
+		return Manifest{}, nil, err
+	}
+	switch header.ManifestVersion {
+	case ManifestVersion1:
+		if err := rejectV2Fields(raw); err != nil {
+			return Manifest{}, nil, err
+		}
+	case ManifestVersion2:
+	default:
+		return Manifest{}, nil, fmt.Errorf("unsupported manifest_version %d (supported: 1, 2)", header.ManifestVersion)
+	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 
@@ -399,8 +423,11 @@ func rejectTrailingJSON(decoder *json.Decoder) error {
 }
 
 func (m Manifest) Validate() error {
-	if m.ManifestVersion != ManifestVersion1 {
-		return fmt.Errorf("manifest_version must be %d", ManifestVersion1)
+	if m.ManifestVersion != ManifestVersion1 && m.ManifestVersion != ManifestVersion2 {
+		return fmt.Errorf("unsupported manifest_version %d (supported: 1, 2)", m.ManifestVersion)
+	}
+	if err := m.validateFlags(nil); err != nil {
+		return err
 	}
 	if err := validatePluginKey(m.Key); err != nil {
 		return err
