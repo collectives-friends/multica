@@ -204,17 +204,18 @@ test.describe("workspace feature flags and installed v2 plugin", () => {
       ]));
       expect(cli("list", "--plugin", PLUGIN_KEY, "--state", "on")).toContain(HINT_FLAG);
       expect(json("get", HINT_FLAG)).toMatchObject({ definition: { key: HINT_FLAG }, value: true, source: "default" });
-      json("set", HINT_FLAG, "off", "--reason", "CLI E2E workspace override");
+      json("set", HINT_FLAG, "off", "--workspace", "--reason", "CLI E2E workspace override");
       expect((await snapshot(owner, workspace)).resolved[HINT_FLAG]).toMatchObject({ value: false, source: "workspace" });
-      json("set", HINT_FLAG, "on", "--personal");
+      json("set", HINT_FLAG, "on");
       expect(json("get", HINT_FLAG)).toMatchObject({ value: true, source: "member" });
-      json("set", HINT_FLAG, "off", "--locked");
+      json("set", HINT_FLAG, "off", "--workspace", "--locked");
       expect(json("get", HINT_FLAG)).toMatchObject({ value: false, source: "workspace_locked", locked: true });
-      json("unset", HINT_FLAG);
+      json("unset", HINT_FLAG, "--workspace");
       expect(json("get", HINT_FLAG)).toMatchObject({ value: true, source: "member" });
-      json("unset", HINT_FLAG, "--personal");
+      json("unset", HINT_FLAG);
       expect(json("get", HINT_FLAG)).toMatchObject({ value: true, source: "default", overrides: {} });
       const history = json("history", HINT_FLAG);
+      expect(history.current).toMatchObject({ value: true, source: "default" });
       expect(history.entries).toHaveLength(5);
       expect(history.entries).toEqual(expect.arrayContaining([
         expect.objectContaining({ flag_key: HINT_FLAG, scope_type: "workspace", action: "set", reason: "CLI E2E workspace override" }),
