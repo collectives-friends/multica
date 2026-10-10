@@ -58,7 +58,7 @@ type ComposioToolkitResponse struct {
 }
 
 func (h *Handler) composioMCPAppsEnabled(ctx context.Context) bool {
-	return featureflags.ComposioMCPAppsEnabled(ctx, h.FeatureFlags)
+	return h.workspaceFlagEnabled(ctx, ctxWorkspaceID(ctx), featureflags.ComposioMCPApps)
 }
 
 // ComposioConnectInit (POST /api/integrations/composio/connect/init) starts a

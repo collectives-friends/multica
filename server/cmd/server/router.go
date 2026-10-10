@@ -453,6 +453,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	h.InvitationRateLimiters = handler.NewMemoryInvitationRateLimiters(invitationRateLimits)
 	h.Metrics = opts.BusinessMetrics
 	h.FeatureFlags = opts.FeatureFlags
+	h.FlagResolver = featureflags.NewResolver(featureflags.HostRegistry(), opts.FeatureFlags, featureflags.DBSource{Queries: queries})
+	h.TaskService.FlagResolver = h.FlagResolver
 	h.TaskService.FeatureFlags = opts.FeatureFlags
 	h.TaskService.Metrics = opts.BusinessMetrics
 	h.IssueService.Metrics = opts.BusinessMetrics
@@ -1250,43 +1252,39 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// a toolkit is a dashboard action, not a redeploy. State signing uses
 	// COMPOSIO_STATE_SECRET, or a key derived from JWT_SECRET when that is unset.
 	if composioAPIKey := strings.TrimSpace(os.Getenv("COMPOSIO_API_KEY")); composioAPIKey != "" {
-		if !featureflags.ComposioMCPAppsEnabled(context.Background(), opts.FeatureFlags) {
-			slog.Info("composio integration disabled (feature flag off)")
+		sdkClient, err := composiosdk.NewClient(composiosdk.Options{APIKey: composioAPIKey})
+		if err != nil {
+			slog.Error("composio: SDK client init failed; composio integration disabled", "error", err)
 		} else {
-			sdkClient, err := composiosdk.NewClient(composiosdk.Options{APIKey: composioAPIKey})
-			if err != nil {
-				slog.Error("composio: SDK client init failed; composio integration disabled", "error", err)
-			} else {
-				stateSecret := composioStateSecret()
-				callbackBase := composioCallbackBaseURL(signupConfig.PublicURL)
-				switch {
-				case len(stateSecret) == 0:
-					slog.Error("composio: no state secret (set COMPOSIO_STATE_SECRET or JWT_SECRET); composio integration disabled")
-				case callbackBase == "":
-					slog.Error("composio: no callback base url (set COMPOSIO_CALLBACK_BASE_URL or MULTICA_PUBLIC_URL); composio integration disabled")
-				default:
-					svc, serr := composiointeg.NewService(sdkClient, queries, composiointeg.Config{
-						StateSecret:     stateSecret,
-						CallbackBaseURL: callbackBase,
-						FrontendBaseURL: appURLFromEnv(),
-					})
-					if serr != nil {
-						slog.Error("composio: service init failed; composio integration disabled", "error", serr)
-					} else {
-						h.Composio = svc
-						// Stage 3 (MUL-3721) hook: feed the per-task MCP
-						// overlay builder into TaskService so every Enqueue*
-						// path attaches the initiator user's Composio session
-						// URL to the task row before the daemon claims it.
-						// taskSvc already exists by this point — it was
-						// constructed inside NewHandler — and exposes its
-						// Composio field for exactly this kind of late wiring,
-						// so no Handler-level mutation is needed.
-						if h.TaskService != nil {
-							h.TaskService.Composio = svc
-						}
-						slog.Info("composio integration enabled")
+			stateSecret := composioStateSecret()
+			callbackBase := composioCallbackBaseURL(signupConfig.PublicURL)
+			switch {
+			case len(stateSecret) == 0:
+				slog.Error("composio: no state secret (set COMPOSIO_STATE_SECRET or JWT_SECRET); composio integration disabled")
+			case callbackBase == "":
+				slog.Error("composio: no callback base url (set COMPOSIO_CALLBACK_BASE_URL or MULTICA_PUBLIC_URL); composio integration disabled")
+			default:
+				svc, serr := composiointeg.NewService(sdkClient, queries, composiointeg.Config{
+					StateSecret:     stateSecret,
+					CallbackBaseURL: callbackBase,
+					FrontendBaseURL: appURLFromEnv(),
+				})
+				if serr != nil {
+					slog.Error("composio: service init failed; composio integration disabled", "error", serr)
+				} else {
+					h.Composio = svc
+					// Stage 3 (MUL-3721) hook: feed the per-task MCP
+					// overlay builder into TaskService so every Enqueue*
+					// path attaches the initiator user's Composio session
+					// URL to the task row before the daemon claims it.
+					// taskSvc already exists by this point — it was
+					// constructed inside NewHandler — and exposes its
+					// Composio field for exactly this kind of late wiring,
+					// so no Handler-level mutation is needed.
+					if h.TaskService != nil {
+						h.TaskService.Composio = svc
 					}
+					slog.Info("composio integration enabled")
 				}
 			}
 		}

@@ -18,10 +18,8 @@ const (
 	// The access model exists to gate Composio sharing, so the two ship on the
 	// same switch.
 	ComposioMCPApps = "composio_mcp_apps"
-	// PluginsV1 gates the user-facing Plugin catalog and lifecycle management
-	// APIs while the first product slice is dogfooded. It deliberately does not
-	// gate pinned Task/Run execution: disabling discovery and management must not
-	// mutate an immutable execution manifest that is already in flight.
+	// PluginsV1 gates plugin management and new contribution execution per
+	// workspace. Deployment configuration remains an operator kill switch.
 	PluginsV1 = "plugins_v1"
 	// TriageV1 gates the Triage inbox (MUL-7189): creating issues into Triage,
 	// triage runs, and the Triage page. It is a GLOBAL switch — per-workspace

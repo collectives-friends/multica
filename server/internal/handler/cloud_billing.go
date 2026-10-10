@@ -86,7 +86,7 @@ func (h *Handler) requireCloudSubscriptionWorkspace(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusForbidden, "this endpoint is only available to human actors")
 		return "", "", false
 	}
-	if !featureflags.BillingWorkspaceSubscriptionsEnabled(r.Context(), h.FeatureFlags) {
+	if !h.workspaceFlagEnabled(r.Context(), ctxWorkspaceID(r.Context()), featureflags.BillingWorkspaceSubscriptions) {
 		writeFeatureDisabled(w, "workspace_subscriptions_disabled", "workspace subscriptions are not enabled")
 		return "", "", false
 	}

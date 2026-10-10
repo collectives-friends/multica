@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -313,4 +314,12 @@ func (h *Handler) PrepareFeatureFlags(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func (h *Handler) workspaceFlagEnabled(ctx context.Context, workspaceID, key string) bool {
+	resolver := h.FlagResolver
+	if resolver == nil {
+		resolver = h.flagResolverFor(h.Queries)
+	}
+	return resolver.ResolveWorkspace(ctx, workspaceID, key).Value
 }

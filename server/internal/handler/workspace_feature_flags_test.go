@@ -9,6 +9,7 @@ import (
 
 	"github.com/multica-ai/multica/server/internal/featureflags"
 	"github.com/multica-ai/multica/server/internal/testutil"
+	"github.com/multica-ai/multica/server/pkg/featureflag"
 )
 
 func TestWorkspaceFlagRoundTripAndAudit(t *testing.T) {
@@ -52,6 +53,18 @@ func TestWorkspaceFlagRoundTripAndAudit(t *testing.T) {
 	}
 	if audits.Entries[0].Action != "clear" || audits.Entries[0].ActorType != "member" || audits.Entries[0].OldEnabled == nil || audits.Entries[0].NewEnabled != nil {
 		t.Fatalf("bad clear audit: %+v", audits.Entries[0])
+	}
+}
+
+func TestHostWorkspaceGate(t *testing.T) {
+	dbfx.Insert(t, "workspace_feature_flag_override", testutil.Cols{"workspace_id": testWorkspaceID, "scope_type": "workspace", "scope_id": testWorkspaceID, "flag_key": "local_search_index", "enabled": false, "updated_by_type": "system"})
+	ctx := featureflag.WithEvalContext(context.Background(), featureflag.EvalContext{WorkspaceID: testWorkspaceID, UserID: testUserID})
+	req := httptest.NewRequest("GET", "/api/search-index", nil).WithContext(ctx)
+	req.Header.Set("X-Workspace-ID", testWorkspaceID)
+	recorder := httptest.NewRecorder()
+	testHandler.RequireLocalSearchIndex(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) })).ServeHTTP(recorder, req)
+	if recorder.Code != 404 {
+		t.Fatalf("workspace override ignored: got %d", recorder.Code)
 	}
 }
 
