@@ -96,7 +96,6 @@ test.describe("workspace feature flags and installed v2 plugin", () => {
       await owner.login(`flags-owner-${run}@multica.ai`, "Flags Admin");
       workspace = await owner.ensureWorkspace(`Flags ${run}`, `flags-${run}`);
       await owner.markUserOnboarded();
-      // The first red run fails here on the foundation server's missing route.
       await enablePlugins(owner, workspace);
 
       await otherOwner.login(`flags-other-${run}@multica.ai`, "Other Admin");
@@ -172,4 +171,57 @@ test.describe("workspace feature flags and installed v2 plugin", () => {
       if (otherWorkspace) { await otherOwner.cleanup(); await otherOwner.deleteWorkspace(); }
     }
   });
+  test("CLI list, get, set, unset and history use the live API", async () => {
+    test.setTimeout(180_000);
+    const directory = await mkdtemp(join(tmpdir(), "multica-flags-cli-e2e-"));
+    const binary = join(directory, "multica");
+    const owner = new TestApiClient();
+    let workspace: Workspace | undefined;
+    try {
+      execFileSync("go", ["build", "-o", binary, "./cmd/multica"], { cwd: resolve("server"), stdio: "pipe" });
+      const run = randomUUID().slice(0, 8);
+      await owner.login(`flags-cli-${run}@multica.ai`, "Flags CLI Admin");
+      workspace = await owner.ensureWorkspace(`CLI flags ${run}`, `cli-flags-${run}`);
+      await enablePlugins(owner, workspace);
+      await publishAndInstall(owner, workspace);
+      // Keep credentials out of argv/output and isolate CLI profile lookup.
+      const childEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("MULTICA_")));
+      Object.assign(childEnv, {
+        MULTICA_SERVER_URL: API_BASE,
+        MULTICA_WORKSPACE_ID: workspace.id,
+        MULTICA_TOKEN: owner.getToken()!,
+        MULTICA_TASK_CONFIG_ROOT: directory,
+      });
+      const cli = (...args: string[]) => execFileSync(binary, ["feature", ...args], {
+        cwd: directory, env: childEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 30_000,
+      });
+      const json = (...args: string[]) => JSON.parse(cli(...args, "--output", "json"));
+      expect(json("list", "--plugin", PLUGIN_KEY)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ key: HINT_FLAG, value: true }),
+        expect.objectContaining({ key: PANEL_FLAG, value: true }),
+      ]));
+      expect(cli("list", "--plugin", PLUGIN_KEY, "--state", "on")).toContain(HINT_FLAG);
+      expect(json("get", HINT_FLAG)).toMatchObject({ definition: { key: HINT_FLAG }, value: true, source: "default" });
+      json("set", HINT_FLAG, "off", "--reason", "CLI E2E workspace override");
+      expect((await snapshot(owner, workspace)).resolved[HINT_FLAG]).toMatchObject({ value: false, source: "workspace" });
+      json("set", HINT_FLAG, "on", "--personal");
+      expect(json("get", HINT_FLAG)).toMatchObject({ value: true, source: "member" });
+      json("set", HINT_FLAG, "off", "--locked");
+      expect(json("get", HINT_FLAG)).toMatchObject({ value: false, source: "workspace_locked", locked: true });
+      json("unset", HINT_FLAG);
+      expect(json("get", HINT_FLAG)).toMatchObject({ value: true, source: "member" });
+      json("unset", HINT_FLAG, "--personal");
+      expect(json("get", HINT_FLAG)).toMatchObject({ value: true, source: "default", overrides: {} });
+      const history = json("history", HINT_FLAG);
+      expect(history.entries).toHaveLength(5);
+      expect(history.entries).toEqual(expect.arrayContaining([
+        expect.objectContaining({ flag_key: HINT_FLAG, scope_type: "workspace", action: "set", reason: "CLI E2E workspace override" }),
+        expect.objectContaining({ flag_key: HINT_FLAG, scope_type: "member", action: "clear" }),
+      ]));
+    } finally {
+      if (workspace) await owner.deleteWorkspace();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
 });
