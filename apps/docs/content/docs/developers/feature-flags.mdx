@@ -23,6 +23,18 @@ Members can change their own value only for `member_overridable` definitions. **
 
 Changes update connected clients without reloading the page. Turning off a contribution's gate removes that contribution and blocks new server calls through it. Already-running requests and skill text already loaded into an agent cannot be recalled.
 
+### Admin and member views
+
+![Workspace administrator managing feature policies](/images/docs/feature-flags-admin.webp)
+
+![Member choosing a personal plugin flag](/images/docs/feature-flags-member.webp)
+
+The same member's issue before and after the administrator turns off the panel gate, without reloading:
+
+![Hello Panel enabled](/images/docs/feature-flags-member-panel-on.webp)
+
+![Hello Panel removed after a live workspace change](/images/docs/feature-flags-member-panel-off.webp)
+
 ## Resolution
 
 Parent-off forces a child off. For an ordinary enabled parent chain, the first applicable layer wins:
