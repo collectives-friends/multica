@@ -67,8 +67,8 @@ func TestManifestV1RejectsV2FieldsEvenEmpty(t *testing.T) {
 						c[kind].([]any)[0].(map[string]any)["requires_flag"] = value
 					}
 				})
-				if _, _, err := ParseManifest(raw); err == nil {
-					t.Fatal("v1 accepted v2 field")
+				if _, _, err := ParseManifest(raw); err == nil || !strings.Contains(err.Error(), "require manifest_version 2") {
+					t.Fatalf("v1 accepted v2 field or unclear error: %v", err)
 				}
 			})
 		}
@@ -128,11 +128,11 @@ func TestManifestV2RejectsInvalidFlags(t *testing.T) {
 			doc["contributes"].(map[string]any)["flags"] = fs
 		})
 		_, _, err := ParseManifest(raw)
-		if (err != nil) != (n > 32) {
+		if (err != nil) != (n > 32) || (err != nil && !strings.Contains(err.Error(), "must not exceed 32")) {
 			t.Fatalf("count %d: %v", n, err)
 		}
 	}
-	for _, parent := range []string{"", "review_enabled"} {
+	for parent, want := range map[string]string{"": "duplicate flag key", "review_enabled": "parent cycle"} {
 		raw := flagDocument(t, func(doc map[string]any) {
 			c := doc["contributes"].(map[string]any)
 			f := c["flags"].([]any)[0].(map[string]any)
@@ -143,8 +143,8 @@ func TestManifestV2RejectsInvalidFlags(t *testing.T) {
 			}
 			c["flags"] = append(c["flags"].([]any), map[string]any{"key": key, "label": "Other", "default": false, "scope_policy": "workspace_only", "parent": parent})
 		})
-		if _, _, err := ParseManifest(raw); err == nil {
-			t.Fatal("accepted duplicate/cyclic flags")
+		if _, _, err := ParseManifest(raw); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("parent %q: got %v, want %s", parent, err, want)
 		}
 	}
 	for _, kind := range []string{"surfaces", "hooks", "resources"} {
@@ -271,17 +271,17 @@ func TestManifestValidateRejectsV1FlagValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.ManifestVersion = 1
-	if err := m.Validate(); err == nil {
-		t.Fatal("programmatic v1 accepted flags")
+	if err := m.Validate(); err == nil || !strings.Contains(err.Error(), "require manifest_version 2") {
+		t.Fatalf("programmatic v1 accepted flags: %v", err)
 	}
 	m.Contributes.Flags = []FlagDefinition{}
-	if err := m.Validate(); err == nil {
-		t.Fatal("programmatic v1 accepted empty flags")
+	if err := m.Validate(); err == nil || !strings.Contains(err.Error(), "require manifest_version 2") {
+		t.Fatalf("programmatic v1 accepted empty flags: %v", err)
 	}
 	m.Contributes.Flags = nil
 	m.Contributes.Hooks[0].RequiresFlag = "host:reviews"
-	if err := m.ValidateFlagReferences(map[string]bool{"reviews": true}); err == nil {
-		t.Fatal("programmatic v1 accepted gates")
+	if err := m.ValidateFlagReferences(map[string]bool{"reviews": true}); err == nil || !strings.Contains(err.Error(), "require manifest_version 2") {
+		t.Fatalf("programmatic v1 accepted gates: %v", err)
 	}
 }
 
