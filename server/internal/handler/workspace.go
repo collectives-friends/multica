@@ -1122,6 +1122,10 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 	qtx := h.Queries.WithTx(tx)
+	if err := qtx.LockWorkspaceFlagWrites(r.Context(), uuidToString(requester.WorkspaceID)); err != nil {
+		writeError(w, 500, "failed to lock workspace flags")
+		return
+	}
 	var sourceContextAttachmentURLs []string
 	var sourceContextIntentURLs []string
 
@@ -1312,6 +1316,10 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 			run:  func() error { return qtx.DeleteWorkspaceSquadsAndSkills(ctx, requester.WorkspaceID) },
 		},
 		{
+			name: "delete feature flag data",
+			run:  func() error { return qtx.DeleteWorkspaceFeatureFlagData(ctx, requester.WorkspaceID) },
+		},
+		{
 			name: "delete plugin data",
 			run:  func() error { return qtx.DeleteWorkspacePluginData(ctx, requester.WorkspaceID) },
 		},
@@ -1346,6 +1354,9 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("commit workspace delete failed", append(logger.RequestAttrs(r), "error", err, "workspace_id", workspaceID)...)
 		writeError(w, http.StatusInternalServerError, "failed to delete workspace")
 		return
+	}
+	if h.FlagResolver != nil {
+		h.FlagResolver.Invalidate(workspaceID)
 	}
 	for _, runtimeID := range runtimeIDs {
 		h.NotifyRuntimeGone(uuidToString(runtimeID))

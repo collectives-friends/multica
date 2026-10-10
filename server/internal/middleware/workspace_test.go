@@ -2,6 +2,8 @@ package middleware
 
 import (
 	"context"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/pkg/featureflag"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -187,5 +189,24 @@ func TestResolveWorkspaceIDFromRequest(t *testing.T) {
 				t.Fatalf("expected %q, got %q", tc.want, got)
 			}
 		})
+	}
+}
+
+func TestSetMemberContextPopulatesFlagEvaluation(t *testing.T) {
+	user := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+	ctx := SetMemberContext(context.Background(), "workspace", db.Member{UserID: user})
+	ec := featureflag.EvalContextFrom(ctx)
+	if ec.WorkspaceID != "workspace" || ec.UserID == "" {
+		t.Fatalf("missing evaluation identity: %+v", ec)
+	}
+	provider := featureflag.NewStaticProvider()
+	provider.Set("scoped", featureflag.Rule{Allow: []string{"workspace"}, AllowBy: "workspace_id"})
+	flags := featureflag.NewService(provider)
+	if !flags.IsEnabled(ctx, "scoped", false) {
+		t.Fatal("workspace allow rule did not match")
+	}
+	other := SetMemberContext(context.Background(), "other", db.Member{UserID: user})
+	if flags.IsEnabled(other, "scoped", false) {
+		t.Fatal("workspace allow rule leaked")
 	}
 }

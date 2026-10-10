@@ -1699,6 +1699,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// Member-level access
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
+					r.Use(h.PrepareFeatureFlags)
 					r.Get("/", h.GetWorkspace)
 					r.Get("/members", h.ListMembersWithUser)
 					r.Post("/leave", h.LeaveWorkspace)
@@ -1725,6 +1726,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// Installed Plugins are member-visible so a member can
 					// see what is mounted in their workspace and which scopes
 					// it holds; install / configure / remove stay admin-only.
+					r.Get("/feature-flags", h.GetFeatureFlags)
+					r.Get("/feature-flags/", h.GetFeatureFlags)
+					r.Get("/feature-flags/audit", h.GetFeatureFlagAudit)
+					r.Put("/feature-flags/{key}", h.SetMemberFeatureFlag)
+					r.Delete("/feature-flags/{key}", h.DeleteMemberFeatureFlag)
+					r.Put("/feature-flags/{key}/workspace", h.SetWorkspaceFeatureFlag)
+					r.Delete("/feature-flags/{key}/workspace", h.DeleteWorkspaceFeatureFlag)
 					r.Get("/plugins", h.ListPlugins)
 					// One short-lived hosted surface launch. Member-visible
 					// because opening an issue is what asks for it; executable
@@ -1818,6 +1826,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				//     initiator or an admin) before doing anything.
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
+					r.Use(h.PrepareFeatureFlags)
 					r.Get("/lark/installations", h.ListLarkInstallations)
 					r.Delete("/lark/installations/{installationId}", h.RevokeLarkInstallation)
 					// Device-flow scan-to-install. Begin opens a new
@@ -1836,6 +1845,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// and is registered outside this workspace group.
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
+					r.Use(h.PrepareFeatureFlags)
 					r.Get("/slack/installations", h.ListSlackInstallations)
 					r.Get("/wecom/installations", h.ListWecomInstallations)
 				})
@@ -1849,6 +1859,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
+					r.Use(h.PrepareFeatureFlags)
 					r.Get("/dingtalk/installations", h.ListDingTalkInstallations)
 					r.Get("/dingtalk/groups", h.ListDingTalkGroups)
 					r.Delete("/dingtalk/installations/{installationId}/groups/{conversationId}", h.ForgetDingTalkGroup)
@@ -1860,6 +1871,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// listing is member-visible; install + revoke are admin-only.
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
+					r.Use(h.PrepareFeatureFlags)
 					r.Get("/telegram/installations", h.ListTelegramInstallations)
 				})
 				r.Group(func(r chi.Router) {
@@ -1969,6 +1981,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Use(handler.RequireHumanActor)
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceMember(queries))
+				r.Use(h.PrepareFeatureFlags)
 				r.Get("/summary", h.GetCloudWorkspaceSubscriptionSummary)
 				r.Get("/prices", h.GetCloudWorkspaceSubscriptionPrices)
 			})
@@ -1985,6 +1998,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// --- Workspace-scoped routes (all require workspace membership) ---
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireWorkspaceMember(queries))
+			r.Use(h.PrepareFeatureFlags)
 
 			// Assignee frequency
 			r.Get("/api/assignee-frequency", h.GetAssigneeFrequency)

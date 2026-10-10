@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/multica-ai/multica/server/pkg/featureflag"
 )
 
 // Context keys for workspace-scoped request data.
@@ -36,7 +37,7 @@ func WorkspaceIDFromContext(ctx context.Context) string {
 func SetMemberContext(ctx context.Context, workspaceID string, member db.Member) context.Context {
 	ctx = context.WithValue(ctx, ctxKeyWorkspaceID, workspaceID)
 	ctx = context.WithValue(ctx, ctxKeyMember, member)
-	return ctx
+	return featureflag.WithEvalContext(ctx, featureflag.EvalContext{WorkspaceID: workspaceID, UserID: util.UUIDToString(member.UserID)})
 }
 
 // errWorkspaceNotFound is returned when a slug was provided but doesn't match

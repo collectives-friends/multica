@@ -25,6 +25,7 @@ type Event struct {
 	// event to a more specific scope than `workspace:{WorkspaceID}`. When set
 	// these tell the listener which Redis stream / Hub room to publish on
 	// without re-deserializing Payload. See MUL-1138 phase 1.
+	RecipientUserID       string
 	TaskID                string
 	ChatSessionID         string
 	ChannelReactionTarget *ChannelReactionTarget `json:"-"`
