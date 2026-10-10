@@ -1,11 +1,18 @@
 {
-  "manifest_version": 1,
+  "manifest_version": 2,
   "key": "ai.multica.hello-panel",
   "name": "Hello Panel",
-  "description": "The reference surface: reads the current issue, posts a comment, and stores a per-member note.",
-  "version": "1.0.0",
-  "author": { "name": "multica", "url": "https://multica.ai" },
-  "scopes": ["issues:read", "comments:write", "storage:user"],
+  "description": "A feature-gated issue panel with live hints, comments, and a private note.",
+  "version": "2.0.0",
+  "author": {
+    "name": "multica",
+    "url": "https://multica.ai"
+  },
+  "scopes": [
+    "issues:read",
+    "comments:write",
+    "storage:user"
+  ],
   "contributes": {
     "surfaces": [
       {
@@ -13,7 +20,27 @@
         "type": "issue_panel",
         "name": "Hello",
         "entry": "ui/main.js",
-        "platforms": ["web", "desktop"]
+        "platforms": [
+          "web",
+          "desktop"
+        ],
+        "requires_flag": "beta_panel"
+      }
+    ],
+    "flags": [
+      {
+        "key": "beta_panel",
+        "label": "Hello panel",
+        "description": "Show the Hello issue panel.",
+        "default": true,
+        "scope_policy": "member_overridable"
+      },
+      {
+        "key": "show_hint",
+        "label": "Private note hint",
+        "description": "Show the note privacy hint inside the open panel.",
+        "default": true,
+        "scope_policy": "member_overridable"
       }
     ]
   }

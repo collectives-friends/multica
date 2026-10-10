@@ -78,3 +78,47 @@ surface will look native without shipping a stylesheet.
 
 The frame does not auto-size. Call `multica.ui.resize(px)` after your content
 settles; the host clamps the value.
+
+## Feature flags (0.2.0)
+
+Declare flags in a **manifest version 2** plugin under `contributes.flags`.
+Each declaration has a local `key`, `label`, `default`, and `scope_policy`
+(`workspace_only` or `member_overridable`). Gate a surface, hook, or resource
+with `requires_flag`. An optional flag `parent` references another own flag
+or a public host flag as `host:<key>`. Other plugins and private host flags
+cannot be referenced.
+
+```js
+const showHint = await multica.flags.get("show_hint", false);
+const flags = await multica.flags.all();
+const context = await multica.context.get(); // context.flags uses the same keys
+
+const unsubscribe = multica.flags.onChange((updated) => {
+  renderHint(updated.show_hint ?? false);
+});
+// Unsubscribe when this view no longer needs updates.
+unsubscribe();
+```
+
+`get(key, fallback = false)` and `all()` are asynchronous. `all()` returns a
+copy of the resolved boolean map. `onChange(listener)` returns an unsubscribe
+function and immediately supplies the latest snapshot when one is already
+available. A new snapshot updates cached `context.flags` before subscribers
+run, including when an event arrives before the first context read.
+
+Only the installation's own short keys and the `host:` keys it references are
+included. The server resolves parent, deployment, workspace, and personal
+precedence; the SDK does not evaluate rules. Updates arrive over the existing
+private MessagePort, without a new action endpoint or credential. There is no
+SDK write method for changing workspace or personal overrides.
+
+The bridge protocol stays at version 2; hook wire version stays at 1. Against
+an older context with no `flags`, `all()` returns `{}` and `get` returns its
+fallback. Version 1 manifests still work but cannot declare the new fields,
+even if empty. Once a v2 version or installation snapshot has been stored,
+rolling the backend back to a v1-only snapshot reader is unsafe.
+
+[Hello Panel](../../examples/plugins/hello-panel) demonstrates a gated panel
+and a separate hint that updates while the panel remains open. See
+[Feature flags and plugins](../../apps/docs/content/docs/developers/feature-flags.mdx)
+for administration, CLI commands, resolution, and deployment configuration.
