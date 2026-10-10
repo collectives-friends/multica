@@ -21,6 +21,16 @@ func withFeatureFlag(t *testing.T, h *Handler, key string, enabled bool) {
 	provider.Set(key, featureflag.Rule{Default: enabled})
 	flags := featureflag.NewService(provider)
 
+	origHandlerResolver := h.FlagResolver
+	h.FlagResolver = nil
+	var origPluginFlags *featureflag.Service
+	var origPluginResolver *featureflags.Resolver
+	if h.PluginService != nil {
+		origPluginFlags = h.PluginService.FeatureFlags
+		origPluginResolver = h.PluginService.FlagResolver
+		h.PluginService.FeatureFlags = flags
+		h.PluginService.FlagResolver = nil
+	}
 	origHandlerFlags := h.FeatureFlags
 	h.FeatureFlags = flags
 	var origTaskFlags *featureflag.Service
@@ -29,6 +39,11 @@ func withFeatureFlag(t *testing.T, h *Handler, key string, enabled bool) {
 		h.TaskService.FeatureFlags = flags
 	}
 	t.Cleanup(func() {
+		h.FlagResolver = origHandlerResolver
+		if h.PluginService != nil {
+			h.PluginService.FeatureFlags = origPluginFlags
+			h.PluginService.FlagResolver = origPluginResolver
+		}
 		h.FeatureFlags = origHandlerFlags
 		if h.TaskService != nil {
 			h.TaskService.FeatureFlags = origTaskFlags

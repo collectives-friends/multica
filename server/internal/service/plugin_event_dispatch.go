@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/featureflags"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/plugincontract"
 )
@@ -227,9 +226,6 @@ func (d *PluginEventDispatcher) run(job dispatchJob) {
 	// It also keeps the flag-off cost at zero. Without this every dispatched
 	// event ran a ListWorkspacePluginInstallations query to discover there was
 	// nothing to call.
-	if !featureflags.PluginsV1Enabled(ctx, d.service.FeatureFlags) {
-		return
-	}
 
 	// Only now, past the flag: the id is needed to narrow the callback grant,
 	// and finding it means parsing the payload.
@@ -271,7 +267,7 @@ func (d *PluginEventDispatcher) deliver(ctx context.Context, installation db.Plu
 	// A hook whose endpoint has been failing is not retried on every event.
 	// Without this, an endpoint that has been down for an hour receives one
 	// doomed request per workspace event, forever.
-	if d.service.HookBreakerOpen(ctx, installation.ID, hook.Key) {
+	if d.service.ContributionActive(ctx, installation, hook.RequiresFlag, "") && d.service.HookBreakerOpen(ctx, installation.ID, hook.Key) {
 		slog.Info("plugins: hook circuit open, skipping event", "hook", hook.Key, "event_type", job.eventType)
 		return
 	}

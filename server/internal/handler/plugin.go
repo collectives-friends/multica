@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/multica-ai/multica/server/pkg/featureflag"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -14,15 +15,31 @@ import (
 )
 
 func (h *Handler) pluginsV1Enabled(ctx context.Context) bool {
-	return featureflags.PluginsV1Enabled(ctx, h.FeatureFlags)
+	if h.FlagResolver != nil {
+		return h.FlagResolver.Enabled(ctx, featureflags.PluginsV1)
+	}
+	return h.flagResolverFor(h.Queries).Enabled(ctx, featureflags.PluginsV1)
 }
 
 func (h *Handler) requirePluginsV1(w http.ResponseWriter, r *http.Request) bool {
-	if h.pluginsV1Enabled(r.Context()) {
+	workspaceID := workspaceIDFromURL(r, "id")
+	resolver := h.pluginFlagResolver()
+	if resolver.EnabledFor(r.Context(), workspaceID, r.Header.Get("X-User-ID"), featureflags.PluginsV1) {
 		return true
 	}
 	writeFeatureDisabled(w, "plugin_api_disabled", "Plugin management is not enabled")
 	return false
+}
+
+func (h *Handler) pluginFlagResolver() *featureflags.Resolver {
+	if h.FlagResolver != nil {
+		return h.FlagResolver
+	}
+	return h.flagResolverFor(h.Queries)
+}
+
+func pluginRequestContext(r *http.Request, workspaceID, userID string) context.Context {
+	return featureflag.WithEvalContext(r.Context(), featureflag.EvalContext{WorkspaceID: workspaceID, UserID: userID})
 }
 
 // writePluginError maps a service error onto a status. Kinds exist so the
@@ -34,6 +51,8 @@ func writePluginError(w http.ResponseWriter, err error, fallback string) {
 		return
 	}
 	switch pluginErr.Kind {
+	case service.PluginErrorContributionDisabled:
+		writeErrorCode(w, http.StatusForbidden, service.PluginContributionDisabled, "This plugin contribution is disabled")
 	case service.PluginErrorInvalid:
 		writeError(w, http.StatusBadRequest, pluginErr.Message)
 	case service.PluginErrorNotFound:
@@ -56,11 +75,12 @@ func writePluginError(w http.ResponseWriter, err error, fallback string) {
 // encrypted table), and configured secrets appear as names in
 // `configured_secrets`.
 type pluginInstallationResponse struct {
-	ID          string `json:"id"`
-	PluginKey   string `json:"plugin_key"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Version     string `json:"version"`
+	Flags       []plugincontract.FlagDefinition `json:"flags"`
+	ID          string                          `json:"id"`
+	PluginKey   string                          `json:"plugin_key"`
+	Name        string                          `json:"name"`
+	Description string                          `json:"description,omitempty"`
+	Version     string                          `json:"version"`
 	// The published version this installation is bound to. Nothing about it can
 	// change under the workspace's feet: upgrading means pointing at a different
 	// version id, which is a second consent.
@@ -80,13 +100,14 @@ type pluginInstallationResponse struct {
 // pluginHookResponse omits input_schema: the settings page lists what a hook is
 // and who may call it, and the raw JSON Schema is noise there.
 type pluginHookResponse struct {
-	Key         string                      `json:"key"`
-	Name        string                      `json:"name"`
-	Description string                      `json:"description"`
-	Triggers    []string                    `json:"triggers"`
-	Events      []string                    `json:"events,omitempty"`
-	Transport   string                      `json:"transport"`
-	Schedule    *pluginHookScheduleResponse `json:"schedule,omitempty"`
+	RequiresFlag string                      `json:"requires_flag,omitempty"`
+	Key          string                      `json:"key"`
+	Name         string                      `json:"name"`
+	Description  string                      `json:"description"`
+	Triggers     []string                    `json:"triggers"`
+	Events       []string                    `json:"events,omitempty"`
+	Transport    string                      `json:"transport"`
+	Schedule     *pluginHookScheduleResponse `json:"schedule,omitempty"`
 }
 
 type pluginHookScheduleResponse struct {
@@ -128,12 +149,13 @@ func (h *Handler) pluginInstallationPayload(ctx context.Context, installation db
 	hooks := make([]pluginHookResponse, 0, len(manifest.Contributes.Hooks))
 	for _, hook := range manifest.Contributes.Hooks {
 		response := pluginHookResponse{
-			Key:         hook.Key,
-			Name:        hook.Name,
-			Description: hook.Description,
-			Triggers:    hook.Triggers,
-			Events:      hook.Events,
-			Transport:   hook.Transport.Type,
+			RequiresFlag: hook.RequiresFlag,
+			Key:          hook.Key,
+			Name:         hook.Name,
+			Description:  hook.Description,
+			Triggers:     hook.Triggers,
+			Events:       hook.Events,
+			Transport:    hook.Transport.Type,
 		}
 		if schedule, ok := schedules[hook.Key]; ok {
 			response.Schedule = &pluginHookScheduleResponse{
@@ -156,6 +178,7 @@ func (h *Handler) pluginInstallationPayload(ctx context.Context, installation db
 	}
 
 	return pluginInstallationResponse{
+		Flags:             append([]plugincontract.FlagDefinition{}, manifest.Contributes.Flags...),
 		ID:                uuidToString(installation.ID),
 		PluginKey:         installation.PluginKey,
 		Name:              manifest.Name,

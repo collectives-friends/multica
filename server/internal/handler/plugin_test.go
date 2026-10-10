@@ -159,6 +159,7 @@ func withLocalPluginSourceIn(t *testing.T, root string, manifest string) string 
 	previousSecrets := testHandler.PluginService.Secrets
 	testHandler.PluginService.LocalDir = root
 	testHandler.PluginService.Host = plugincontract.Capabilities{
+		Flags:         true,
 		SurfaceTypes:  map[string]bool{plugincontract.SurfaceIssuePanel: true, plugincontract.SurfaceSidebarPanel: true, plugincontract.SurfaceModal: true},
 		HookTriggers:  map[string]bool{plugincontract.TriggerUI: true, plugincontract.TriggerManual: true, plugincontract.TriggerAgent: true, plugincontract.TriggerEvent: true, plugincontract.TriggerSchedule: true},
 		HookTransport: map[string]bool{plugincontract.TransportHTTP: true, plugincontract.TransportMCP: true},

@@ -27,9 +27,6 @@ type invokeAgentHookRequest struct {
 
 // InvokeAgentPluginHook — POST /api/daemon/tasks/{id}/plugin-hooks
 func (h *Handler) InvokeAgentPluginHook(w http.ResponseWriter, r *http.Request) {
-	if !h.requirePluginsV1(w, r) {
-		return
-	}
 	task, workspaceID, ok := h.requireDaemonTaskAccessWithWorkspace(w, r, chi.URLParam(r, "id"))
 	if !ok {
 		return
@@ -66,9 +63,16 @@ func (h *Handler) InvokeAgentPluginHook(w http.ResponseWriter, r *http.Request) 
 		// whole task — the outcome acceptance criterion 3 forbids.
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status": result.Status,
-			"error":  result.Error,
+			"error":  agentHookError(result.Error, err),
 		})
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func agentHookError(message string, err error) string {
+	if message != "" {
+		return message
+	}
+	return err.Error()
 }

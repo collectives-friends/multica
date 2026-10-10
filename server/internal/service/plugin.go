@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/featureflags"
 	"github.com/multica-ai/multica/server/internal/util"
 	"github.com/multica-ai/multica/server/internal/util/secretbox"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -27,8 +28,9 @@ import (
 // PluginService owns plugin publishing, installation, configuration, and
 // plugin-owned state.
 type PluginService struct {
-	Queries   *db.Queries
-	TxStarter TxStarter
+	FlagResolver *featureflags.Resolver
+	Queries      *db.Queries
+	TxStarter    TxStarter
 	// Secrets encrypts `secret` config values. Nil disables secret writes so a
 	// misconfigured deployment fails closed instead of storing plaintext.
 	Secrets *secretbox.Box
@@ -123,13 +125,14 @@ func devHookClient(devOrigins []string, caPath string) *http.Client {
 type PluginErrorKind string
 
 const (
-	PluginErrorInvalid      PluginErrorKind = "invalid"
-	PluginErrorNotFound     PluginErrorKind = "not_found"
-	PluginErrorConflict     PluginErrorKind = "conflict"
-	PluginErrorForbidden    PluginErrorKind = "forbidden"
-	PluginErrorIncompatible PluginErrorKind = "incompatible"
-	PluginErrorQuota        PluginErrorKind = "quota"
-	PluginErrorUnavailable  PluginErrorKind = "unavailable"
+	PluginErrorInvalid              PluginErrorKind = "invalid"
+	PluginErrorContributionDisabled PluginErrorKind = "contribution_disabled"
+	PluginErrorNotFound             PluginErrorKind = "not_found"
+	PluginErrorConflict             PluginErrorKind = "conflict"
+	PluginErrorForbidden            PluginErrorKind = "forbidden"
+	PluginErrorIncompatible         PluginErrorKind = "incompatible"
+	PluginErrorQuota                PluginErrorKind = "quota"
+	PluginErrorUnavailable          PluginErrorKind = "unavailable"
 )
 
 type PluginError struct {
@@ -160,12 +163,13 @@ func pluginErrf(kind PluginErrorKind, format string, args ...any) *PluginError {
 // version — so unlike the URL model this replaced, the code approved here is the
 // code that runs.
 type PluginPreview struct {
-	Manifest     plugincontract.Manifest `json:"manifest"`
-	Scopes       []string                `json:"scopes"`
-	ConfigSchema []PluginConfigField     `json:"config_schema"`
-	VersionID    string                  `json:"version_id"`
-	Version      string                  `json:"version"`
-	Digest       string                  `json:"digest"`
+	Flags        []plugincontract.FlagDefinition `json:"flags"`
+	Manifest     plugincontract.Manifest         `json:"manifest"`
+	Scopes       []string                        `json:"scopes"`
+	ConfigSchema []PluginConfigField             `json:"config_schema"`
+	VersionID    string                          `json:"version_id"`
+	Version      string                          `json:"version"`
+	Digest       string                          `json:"digest"`
 	// Upgrade describes what changes if this replaces an existing install.
 	Installed        bool     `json:"installed"`
 	InstalledVersion string   `json:"installed_version,omitempty"`
@@ -214,6 +218,9 @@ func ManifestForVersion(version db.PluginPackageVersion) (plugincontract.Manifes
 	var manifest plugincontract.Manifest
 	if err := json.Unmarshal(version.Manifest, &manifest); err != nil {
 		return plugincontract.Manifest{}, nil, &PluginError{Kind: PluginErrorInvalid, Message: "published plugin manifest is unreadable", Err: err}
+	}
+	if err := validatePluginHostFlags(manifest); err != nil {
+		return plugincontract.Manifest{}, nil, &PluginError{Kind: PluginErrorInvalid, Message: "published plugin flags are invalid", Err: err}
 	}
 	return manifest, version.Manifest, nil
 }
@@ -274,6 +281,7 @@ func (s *PluginService) PreviewPlugin(ctx context.Context, workspaceID pgtype.UU
 	}
 
 	preview := &PluginPreview{
+		Flags:        append([]plugincontract.FlagDefinition{}, manifest.Contributes.Flags...),
 		Manifest:     manifest,
 		Scopes:       manifest.Scopes,
 		ConfigSchema: ConfigFieldsForManifest(manifest),
@@ -371,6 +379,9 @@ func (s *PluginService) InstallPlugin(ctx context.Context, workspaceID, userID p
 		}
 		defer func() { _ = tx.Rollback(ctx) }()
 		queries := s.Queries.WithTx(tx)
+		if err := queries.LockWorkspaceFlagWrites(ctx, uuidString(workspaceID)); err != nil {
+			return db.PluginInstallation{}, err
+		}
 
 		if lockErr := lockPluginPackageKey(ctx, queries, workspaceID, manifest.Key); lockErr != nil {
 			return db.PluginInstallation{}, lockErr
@@ -408,6 +419,7 @@ func (s *PluginService) InstallPlugin(ctx context.Context, workspaceID, userID p
 		if commitErr := tx.Commit(ctx); commitErr != nil {
 			return db.PluginInstallation{}, &PluginError{Kind: PluginErrorUnavailable, Message: "commit install", Err: commitErr}
 		}
+		s.invalidatePluginFlags(workspaceID)
 		return installation, nil
 	}
 	if err != nil {
@@ -419,11 +431,6 @@ func (s *PluginService) InstallPlugin(ctx context.Context, workspaceID, userID p
 	// too, which is the case where unreachable residue is ciphertext. The whole
 	// upgrade is one transaction so a snapshot can never land with the previous
 	// version's secrets still attached.
-	config := pruneConfig(existing.Config, manifest)
-	orphanedSecrets, err := s.orphanedSecretKeys(ctx, existing.ID, manifest)
-	if err != nil {
-		return db.PluginInstallation{}, err
-	}
 
 	tx, err := s.TxStarter.Begin(ctx)
 	if err != nil {
@@ -431,6 +438,9 @@ func (s *PluginService) InstallPlugin(ctx context.Context, workspaceID, userID p
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	queries := s.Queries.WithTx(tx)
+	if err := queries.LockWorkspaceFlagWrites(ctx, uuidString(workspaceID)); err != nil {
+		return db.PluginInstallation{}, err
+	}
 
 	if err := lockPluginPackageKey(ctx, queries, workspaceID, manifest.Key); err != nil {
 		return db.PluginInstallation{}, err
@@ -439,10 +449,29 @@ func (s *PluginService) InstallPlugin(ctx context.Context, workspaceID, userID p
 		return db.PluginInstallation{}, err
 	}
 
+	existing, err = queries.GetWorkspacePluginInstallation(ctx, db.GetWorkspacePluginInstallationParams{WorkspaceID: workspaceID, ID: existing.ID})
+	if err != nil {
+		return db.PluginInstallation{}, err
+	}
+	config := pruneConfig(existing.Config, manifest)
+	txService := *s
+	txService.Queries = queries
+	orphanedSecrets, err := txService.orphanedSecretKeys(ctx, existing.ID, manifest)
+	if err != nil {
+		return db.PluginInstallation{}, err
+	}
+
 	for _, key := range orphanedSecrets {
 		if _, err := queries.DeletePluginSecret(ctx, db.DeletePluginSecretParams{InstallationID: existing.ID, Key: key}); err != nil {
 			return db.PluginInstallation{}, &PluginError{Kind: PluginErrorUnavailable, Message: "prune plugin secret", Err: err}
 		}
+	}
+	keepFlags := map[string]bool{}
+	for _, flag := range manifest.Contributes.Flags {
+		keepFlags[PluginFlagKey(manifest.Key, flag.Key)] = true
+	}
+	if err := clearPluginFlagOverrides(ctx, queries, existing, keepFlags, "plugin_upgrade"); err != nil {
+		return db.PluginInstallation{}, err
 	}
 	updated, err := queries.UpdatePluginInstallationManifest(ctx, db.UpdatePluginInstallationManifestParams{
 		ID:               existing.ID,
@@ -467,6 +496,7 @@ func (s *PluginService) InstallPlugin(ctx context.Context, workspaceID, userID p
 	if err := tx.Commit(ctx); err != nil {
 		return db.PluginInstallation{}, &PluginError{Kind: PluginErrorUnavailable, Message: "commit upgrade", Err: err}
 	}
+	s.invalidatePluginFlags(workspaceID)
 	return updated, nil
 }
 
@@ -531,6 +561,9 @@ func ParseInstallationManifest(installation db.PluginInstallation) (plugincontra
 	var manifest plugincontract.Manifest
 	if err := json.Unmarshal(installation.Manifest, &manifest); err != nil {
 		return plugincontract.Manifest{}, fmt.Errorf("decode stored plugin manifest: %w", err)
+	}
+	if err := validatePluginHostFlags(manifest); err != nil {
+		return plugincontract.Manifest{}, err
 	}
 	return manifest, nil
 }
@@ -706,6 +739,9 @@ func (s *PluginService) SetEnabled(ctx context.Context, installation db.PluginIn
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	queries := s.Queries.WithTx(tx)
+	if err := queries.LockWorkspaceFlagWrites(ctx, uuidString(installation.WorkspaceID)); err != nil {
+		return db.PluginInstallation{}, err
+	}
 
 	updated, err := queries.SetPluginInstallationEnabled(ctx, db.SetPluginInstallationEnabledParams{
 		ID:      installation.ID,
@@ -720,6 +756,7 @@ func (s *PluginService) SetEnabled(ctx context.Context, installation db.PluginIn
 	if err := tx.Commit(ctx); err != nil {
 		return db.PluginInstallation{}, &PluginError{Kind: PluginErrorUnavailable, Message: "commit plugin state update", Err: err}
 	}
+	s.invalidatePluginFlags(installation.WorkspaceID)
 	return updated, nil
 }
 
@@ -735,6 +772,12 @@ func (s *PluginService) Uninstall(ctx context.Context, installation db.PluginIns
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	queries := s.Queries.WithTx(tx)
+	if err := queries.LockWorkspaceFlagWrites(ctx, uuidString(installation.WorkspaceID)); err != nil {
+		return err
+	}
+	if err := clearPluginFlagOverrides(ctx, queries, installation, nil, "plugin_uninstall"); err != nil {
+		return err
+	}
 	if err := queries.DeletePluginHookSchedulesByInstallation(ctx, installation.ID); err != nil {
 		return &PluginError{Kind: PluginErrorUnavailable, Message: "delete plugin hook schedules", Err: err}
 	}
@@ -762,6 +805,7 @@ func (s *PluginService) Uninstall(ctx context.Context, installation db.PluginIns
 	if err := tx.Commit(ctx); err != nil {
 		return &PluginError{Kind: PluginErrorUnavailable, Message: "commit uninstall", Err: err}
 	}
+	s.invalidatePluginFlags(installation.WorkspaceID)
 	return nil
 }
 

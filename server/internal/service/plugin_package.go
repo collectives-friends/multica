@@ -112,6 +112,9 @@ func (s *PluginService) PublishLocalBundle(ctx context.Context, workspaceID, use
 // was never stored; and a first publish that failed after creating the package
 // leaves a plugin with zero versions in the list.
 func (s *PluginService) publish(ctx context.Context, workspaceID, userID pgtype.UUID, bundle plugincontract.Bundle, devLoop bool) (PluginPackageSummary, error) {
+	if err := validatePluginHostFlags(bundle.Manifest); err != nil {
+		return PluginPackageSummary{}, &PluginError{Kind: PluginErrorInvalid, Message: "plugin flags are invalid", Err: err}
+	}
 	if err := bundle.Manifest.CheckCapabilities(s.Host); err != nil {
 		return PluginPackageSummary{}, &PluginError{Kind: PluginErrorIncompatible, Message: capabilityMessage(err), Err: err}
 	}
