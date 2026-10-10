@@ -48,6 +48,37 @@ describe("workspace flags", () => {
     );
     expect(contributionEnabled(undefined, "installation", {})).toBe(true);
   });
+  it("returns definitions, resolved and overrides from GET /api/workspaces/{id}/feature-flags", async () => {
+    const body = {
+      definitions: [
+        { key: "plugins_v1", label: "Plugins", group: "Platform", default: false },
+        { key: "plugin:inst:beta", scope_policy: "member_overridable", plugin_installation_id: "inst" },
+      ],
+      resolved: {
+        plugins_v1: { value: true, source: "workspace", locked: false },
+        "plugin:inst:beta": { value: false, source: "member", locked: false },
+      },
+      overrides: {
+        workspace: { plugins_v1: { enabled: true, locked: false } },
+        member: { "plugin:inst:beta": false },
+      },
+    };
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify(body), { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    const snapshot = await new ApiClient("http://test").getFeatureFlags("ws");
+    expect(fetch.mock.calls[0]?.[0]).toBe("http://test/api/workspaces/ws/feature-flags");
+    expect(snapshot.definitions.map((d) => d.key)).toEqual(["plugins_v1", "plugin:inst:beta"]);
+    expect(snapshot.definitions[1]).toMatchObject({
+      scope_policy: "member_overridable",
+      plugin_installation_id: "inst",
+      group: "Other",
+    });
+    expect(snapshot.resolved).toEqual(body.resolved);
+    expect(snapshot.overrides).toEqual(body.overrides);
+    vi.unstubAllGlobals();
+  });
   it("parses malformed responses with a safe fallback", async () => {
     vi.stubGlobal(
       "fetch",
