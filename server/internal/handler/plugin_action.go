@@ -226,7 +226,7 @@ func (h *Handler) pluginTokenCaller(w http.ResponseWriter, r *http.Request, toke
 
 	if callbackHook != "" {
 		hook, err := service.FindHook(caller.Installation, callbackHook)
-		if err == nil && hook.RequiresFlag != "" && !h.PluginService.ContributionActive(r.Context(), caller.Installation, hook.RequiresFlag, uuidToString(memberUserID)) {
+		if err != nil || !h.PluginService.ContributionActive(r.Context(), caller.Installation, hook.RequiresFlag, uuidToString(memberUserID)) {
 			publicapiv1.WriteProblem(w, r, http.StatusForbidden, service.PluginContributionDisabled, "This plugin contribution is disabled")
 			return service.PluginActionCaller{}, pluginActor{}, false
 		}

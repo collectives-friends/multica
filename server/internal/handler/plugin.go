@@ -8,10 +8,12 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/featureflags"
 	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/plugincontract"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 func (h *Handler) pluginsV1Enabled(ctx context.Context) bool {
@@ -146,8 +148,12 @@ func (h *Handler) pluginInstallationPayload(ctx context.Context, installation db
 		schedules[schedule.HookKey] = schedule
 	}
 
+	userID := featureflag.EvalContextFrom(ctx).UserID
 	hooks := make([]pluginHookResponse, 0, len(manifest.Contributes.Hooks))
 	for _, hook := range manifest.Contributes.Hooks {
+		if !h.PluginService.ContributionActive(ctx, installation, hook.RequiresFlag, userID) {
+			continue
+		}
 		response := pluginHookResponse{
 			RequiresFlag: hook.RequiresFlag,
 			Key:          hook.Key,
@@ -168,13 +174,17 @@ func (h *Handler) pluginInstallationPayload(ctx context.Context, installation db
 		}
 		hooks = append(hooks, response)
 	}
-	surfaces := manifest.Contributes.Surfaces
-	if surfaces == nil {
-		surfaces = []plugincontract.Surface{}
+	surfaces := make([]plugincontract.Surface, 0, len(manifest.Contributes.Surfaces))
+	for _, surface := range manifest.Contributes.Surfaces {
+		if h.PluginService.ContributionActive(ctx, installation, surface.RequiresFlag, userID) {
+			surfaces = append(surfaces, surface)
+		}
 	}
-	resources := manifest.Contributes.Resources
-	if resources == nil {
-		resources = []plugincontract.Resource{}
+	resources := make([]plugincontract.Resource, 0, len(manifest.Contributes.Resources))
+	for _, resource := range manifest.Contributes.Resources {
+		if h.PluginService.ContributionActive(ctx, installation, resource.RequiresFlag, userID) {
+			resources = append(resources, resource)
+		}
 	}
 
 	return pluginInstallationResponse{
@@ -216,7 +226,7 @@ func (h *Handler) ListPlugins(w http.ResponseWriter, r *http.Request) {
 	}
 	payloads := make([]pluginInstallationResponse, 0, len(installations))
 	for _, installation := range installations {
-		payload, err := h.pluginInstallationPayload(r.Context(), installation)
+		payload, err := h.pluginInstallationPayload(pluginRequestContext(r, uuidToString(installation.WorkspaceID), r.Header.Get("X-User-ID")), installation)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to list Plugins")
 			return
@@ -284,7 +294,8 @@ func (h *Handler) InstallPlugin(w http.ResponseWriter, r *http.Request) {
 		writePluginError(w, err, "failed to install the Plugin")
 		return
 	}
-	payload, err := h.pluginInstallationPayload(r.Context(), installation)
+	h.publishPluginCatalogChanged(r, uuidToString(installation.WorkspaceID))
+	payload, err := h.pluginLifecyclePayload(r, installation)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to install the Plugin")
 		return
@@ -312,7 +323,7 @@ func (h *Handler) ConfigurePlugin(w http.ResponseWriter, r *http.Request) {
 		writePluginError(w, err, "failed to configure the Plugin")
 		return
 	}
-	payload, err := h.pluginInstallationPayload(r.Context(), updated)
+	payload, err := h.pluginInstallationPayload(pluginRequestContext(r, uuidToString(updated.WorkspaceID), r.Header.Get("X-User-ID")), updated)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to configure the Plugin")
 		return
@@ -340,7 +351,10 @@ func (h *Handler) setPluginEnabled(w http.ResponseWriter, r *http.Request, enabl
 		writePluginError(w, err, "failed to update the Plugin")
 		return
 	}
-	payload, err := h.pluginInstallationPayload(r.Context(), updated)
+	if installation.Enabled != updated.Enabled {
+		h.publishPluginCatalogChanged(r, uuidToString(installation.WorkspaceID))
+	}
+	payload, err := h.pluginLifecyclePayload(r, updated)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update the Plugin")
 		return
@@ -358,6 +372,7 @@ func (h *Handler) UninstallPlugin(w http.ResponseWriter, r *http.Request) {
 		writePluginError(w, err, "failed to uninstall the Plugin")
 		return
 	}
+	h.publishPluginCatalogChanged(r, uuidToString(installation.WorkspaceID))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -375,4 +390,26 @@ func (h *Handler) pluginInstallationFromURL(w http.ResponseWriter, r *http.Reque
 		return db.PluginInstallation{}, false
 	}
 	return installation, true
+}
+
+func (h *Handler) publishPluginCatalogChanged(r *http.Request, workspaceID string) {
+	if h.Bus == nil {
+		return
+	}
+	h.Bus.Publish(events.Event{Type: protocol.EventFeatureFlagChanged, WorkspaceID: workspaceID, ActorType: "member", ActorID: requestUserID(r), Payload: map[string]any{"workspace_id": workspaceID, "key": featureflags.PluginsV1, "scope_type": "workspace", "enabled": nil, "locked": nil, "action": "catalog_changed"}})
+}
+
+// Lifecycle writes change definitions while the request still carries its old
+// prepared snapshot. Refresh only these responses; list requests reuse their
+// single middleware snapshot for every installation.
+func (h *Handler) pluginLifecyclePayload(r *http.Request, installation db.PluginInstallation) (pluginInstallationResponse, error) {
+	resolver := h.PluginService.FlagResolver
+	if resolver == nil {
+		resolver = h.pluginFlagResolver()
+	}
+	ctx, err := resolver.Prepare(r.Context(), uuidToString(installation.WorkspaceID), requestUserID(r))
+	if err != nil {
+		return pluginInstallationResponse{}, err
+	}
+	return h.pluginInstallationPayload(ctx, installation)
 }

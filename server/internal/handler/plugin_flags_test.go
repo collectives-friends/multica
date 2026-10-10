@@ -11,9 +11,12 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/featureflags"
 	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/multica-ai/multica/server/pkg/plugincontract"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 func installFlagHandlerPlugin(t *testing.T) db.PluginInstallation {
@@ -158,5 +161,136 @@ func TestPluginFlagsUnknownHostRefRefusedAtPublish(t *testing.T) {
 	_, err := testHandler.PluginService.PublishLocalBundle(context.Background(), parseUUID(testWorkspaceID), parseUUID(testUserID), "hello")
 	if err == nil || !strings.Contains(err.Error(), "non-public or unknown") {
 		t.Fatalf("private host reference error=%v", err)
+	}
+}
+
+func TestPluginFlagsInstallationPayloadFiltersContributionsForMember(t *testing.T) {
+	installation := installFlagHandlerPlugin(t)
+	manifest, err := service.ParseInstallationManifest(installation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Scopes = append(manifest.Scopes, "net:example.com")
+	manifest.Contributes.Hooks = []plugincontract.Hook{{Key: "review", Name: "Review", Description: "Review", RequiresFlag: "review", Triggers: []string{"manual"}, Transport: plugincontract.HookTransport{Type: "http", URL: "https://example.com/review"}}}
+	manifest.Contributes.Resources = []plugincontract.Resource{{Type: "skill", Key: "review", Entry: "skills/review/SKILL.md", RequiresFlag: "review"}}
+	raw, _ := json.Marshal(manifest)
+	_, err = testHandler.Queries.UpdatePluginInstallationManifest(context.Background(), db.UpdatePluginInstallationManifestParams{ID: installation.ID, PackageVersionID: installation.PackageVersionID, Version: installation.Version, Manifest: raw, GrantedScopes: installation.GrantedScopes, Config: installation.Config})
+	if err != nil {
+		t.Fatal(err)
+	}
+	setHandlerPluginMemberFlag(t, installation, false)
+	recorder := httptest.NewRecorder()
+	testHandler.ListPlugins(recorder, pluginHandlerRequest(http.MethodGet, "/plugins", nil, map[string]string{"id": testWorkspaceID}))
+	if recorder.Code != 200 {
+		t.Fatalf("list=%d %s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		Plugins []pluginInstallationResponse `json:"plugins"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	rows := payload.Plugins
+	if len(rows) != 1 || len(rows[0].Surfaces) != 0 || len(rows[0].Hooks) != 0 || len(rows[0].Resources) != 0 {
+		t.Fatalf("disabled contributions visible: %+v", rows)
+	}
+}
+func TestPluginFlagsCallbackRejectsRemovedHook(t *testing.T) {
+	withPluginsV1Flag(t, testHandler, true)
+	cleanupPluginInstallations(t)
+	withCallbackTokens(t)
+	installationID := installHookPlugin(t)
+	token := issueCallbackToken(t, installationID, service.HookActor{Type: "plugin", ID: parseUUID(installationID)})
+	installation, err := testHandler.Queries.GetPluginInstallation(context.Background(), parseUUID(installationID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest map[string]any
+	if err := json.Unmarshal(installation.Manifest, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	hooks := manifest["contributes"].(map[string]any)["hooks"].([]any)
+	manifest["contributes"].(map[string]any)["hooks"] = hooks[1:]
+	raw, _ := json.Marshal(manifest)
+	_, err = testHandler.Queries.UpdatePluginInstallationManifest(context.Background(), db.UpdatePluginInstallationManifestParams{ID: installation.ID, PackageVersionID: installation.PackageVersionID, Version: installation.Version, Manifest: raw, GrantedScopes: installation.GrantedScopes, Config: installation.Config})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	testHandler.GetPluginContext(recorder, callbackRequest(token, http.MethodGet, "/v1/context", nil, nil))
+	if recorder.Code != 403 || !strings.Contains(recorder.Body.String(), service.PluginContributionDisabled) {
+		t.Fatalf("removed hook callback=%d %s", recorder.Code, recorder.Body.String())
+	}
+}
+func TestPluginFlagLifecyclePublishesCatalogInvalidation(t *testing.T) {
+	installation := installFlagHandlerPlugin(t)
+	oldBus := testHandler.Bus
+	testHandler.Bus = events.New()
+	t.Cleanup(func() { testHandler.Bus = oldBus })
+	var received []events.Event
+	testHandler.Bus.Subscribe(protocol.EventFeatureFlagChanged, func(event events.Event) { received = append(received, event) })
+	request := func() *http.Request {
+		return pluginHandlerRequest(http.MethodPost, "/plugins", nil, map[string]string{"id": testWorkspaceID, "installationId": uuidToString(installation.ID)})
+	}
+	recorder := httptest.NewRecorder()
+	testHandler.DisablePlugin(recorder, request())
+	if recorder.Code != 200 {
+		t.Fatal(recorder.Body.String())
+	}
+	recorder = httptest.NewRecorder()
+	testHandler.EnablePlugin(recorder, request())
+	if recorder.Code != 200 {
+		t.Fatal(recorder.Body.String())
+	}
+	body, _ := json.Marshal(map[string]any{"version_id": uuidToString(installation.PackageVersionID), "granted_scopes": []string{"issues:read", "comments:write", "storage:user"}})
+	recorder = httptest.NewRecorder()
+	testHandler.InstallPlugin(recorder, pluginHandlerRequest(http.MethodPost, "/plugins", body, map[string]string{"id": testWorkspaceID}))
+	if recorder.Code != 201 {
+		t.Fatal(recorder.Body.String())
+	}
+	recorder = httptest.NewRecorder()
+	testHandler.UninstallPlugin(recorder, request())
+	if recorder.Code != 204 {
+		t.Fatal(recorder.Body.String())
+	}
+	if len(received) != 4 {
+		t.Fatalf("catalog invalidations=%d, want4", len(received))
+	}
+	for _, event := range received {
+		payload := event.Payload.(map[string]any)
+		if event.WorkspaceID != testWorkspaceID || event.RecipientUserID != "" || payload["action"] != "catalog_changed" || payload["key"] != featureflags.PluginsV1 || payload["enabled"] != nil || payload["locked"] != nil {
+			t.Fatalf("event=%+v", event)
+		}
+	}
+}
+
+func TestPluginFlagsUpgradeRefreshesPreparedRequestSnapshot(t *testing.T) {
+	installation := installFlagHandlerPlugin(t)
+	manifest, err := service.ParseInstallationManifest(installation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Version = "2.0.0"
+	manifest.Contributes.Flags[0].Key = "new_review"
+	manifest.Contributes.Surfaces[0].RequiresFlag = "new_review"
+	raw, _ := json.Marshal(manifest)
+	versionID := withLocalPluginSource(t, string(raw))
+	body, _ := json.Marshal(map[string]any{"version_id": versionID, "granted_scopes": manifest.Scopes})
+	request := pluginHandlerRequest(http.MethodPost, "/plugins", body, map[string]string{"id": testWorkspaceID})
+	prepared, err := testHandler.PluginService.FlagResolver.Prepare(request.Context(), testWorkspaceID, testUserID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	testHandler.InstallPlugin(recorder, request.WithContext(prepared))
+	if recorder.Code != 201 {
+		t.Fatalf("upgrade=%d %s", recorder.Code, recorder.Body.String())
+	}
+	var payload pluginInstallationResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Surfaces) != 1 || payload.Surfaces[0].RequiresFlag != "new_review" {
+		t.Fatalf("upgrade retained old prepared flags: %+v", payload.Surfaces)
 	}
 }

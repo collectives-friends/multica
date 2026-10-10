@@ -91,7 +91,7 @@ func (h *Handler) ApprovePluginMCPTools(w http.ResponseWriter, r *http.Request) 
 		writePluginError(w, err, "failed to approve the MCP tools")
 		return
 	}
-	payload, err := h.pluginInstallationPayload(r.Context(), updated)
+	payload, err := h.pluginInstallationPayload(pluginRequestContext(r, uuidToString(updated.WorkspaceID), r.Header.Get("X-User-ID")), updated)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load the Plugin")
 		return
