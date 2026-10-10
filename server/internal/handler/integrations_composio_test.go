@@ -282,6 +282,9 @@ func TestComposio_CallbackRedirects(t *testing.T) {
 		t.Fatal("could not capture signed state")
 	}
 
+	// Callback identity comes from the existing signed handshake. It has no
+	// selected workspace and must complete even without a deployment override.
+	h2.FeatureFlags = nil
 	w := httptest.NewRecorder()
 	h2.ComposioCallback(w, composioReq(http.MethodGet, "/callback?state="+state+"&status=success&connected_account_id=ca_1", ""))
 	if w.Code != http.StatusFound {

@@ -1908,12 +1908,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// "this Telegram user id requested binding".
 		r.Post("/api/telegram/binding/redeem", h.RedeemTelegramBindingToken)
 
-		// Composio integration (MUL-3720). User-scoped (no workspace context):
-		// a connection belongs to a user. These four require a logged-in
+		// Composio integration (MUL-3720). Connections remain user-owned;
+		// a verified workspace selection controls availability. These four require a logged-in
 		// session; the OAuth callback is the outlier and lives outside the Auth
 		// group (registered above with the other public OAuth/webhook routes —
-		// see MUL-3843). All return 503 when COMPOSIO_API_KEY is unset.
+		// see MUL-3843). All return 403 when COMPOSIO_API_KEY is unset.
 		r.Route("/api/integrations/composio", func(r chi.Router) {
+			r.Use(h.PrepareComposioWorkspace)
 			r.Post("/connect/init", h.ComposioConnectInit)
 			r.Get("/toolkits", h.ListComposioToolkits)
 			r.Get("/connections", h.ListComposioConnections)
