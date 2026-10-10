@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/featureflags"
+	"github.com/multica-ai/multica/server/internal/service"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/featureflag"
@@ -27,7 +28,9 @@ func (h *Handler) flagResolverFor(q *db.Queries) *featureflags.Resolver {
 	if h.FlagResolver != nil {
 		registry = h.FlagResolver.Registry
 	}
-	return featureflags.NewResolver(registry, h.FeatureFlags, featureflags.DBSource{Queries: q})
+	return featureflags.NewResolver(registry, h.FeatureFlags, featureflags.DBSource{Queries: q, PluginDefinitions: func(ctx context.Context, workspaceID string) ([]featureflags.Definition, error) {
+		return service.PluginFlagDefinitions(ctx, q, workspaceID)
+	}})
 }
 
 func flagError(w http.ResponseWriter, status int, code, message string) {

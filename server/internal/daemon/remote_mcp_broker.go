@@ -70,7 +70,8 @@ func startTaskRemoteMCPBrokers(setupCtx, lifetimeCtx context.Context, taskID, pr
 			return nil, diagnostics, nil, errors.New(message)
 		}
 		headers := make(http.Header)
-		if connection.CredentialHeader != "" && resolveCredential != nil {
+		requiresResolution := connection.CredentialHeader != "" || strings.HasPrefix(connection.ContributionID, "plugin:")
+		if requiresResolution && resolveCredential != nil {
 			resolvedHeaders, resolveErr := resolveCredential(setupCtx, connection.ContributionID)
 			if resolveErr != nil {
 				message := fmt.Sprintf("Remote MCP %s credential is unavailable", connection.ContributionKey)
@@ -82,7 +83,7 @@ func startTaskRemoteMCPBrokers(setupCtx, lifetimeCtx context.Context, taskID, pr
 				return nil, diagnostics, nil, fmt.Errorf("%s: %w", message, resolveErr)
 			}
 			headers = resolvedHeaders
-		} else if connection.CredentialHeader != "" {
+		} else if requiresResolution {
 			message := fmt.Sprintf("Remote MCP %s credential resolver is unavailable", connection.ContributionKey)
 			if connection.FailurePolicy == "optional" {
 				diagnostics = append(diagnostics, message)
@@ -292,7 +293,11 @@ func (proxy *remoteMCPProxy) ServeHTTP(w http.ResponseWriter, request *http.Requ
 		}
 	}
 	credentialHeaders := proxy.credentialHeaders
-	if proxy.connection.CredentialHeader != "" && proxy.resolveCredential != nil {
+	if proxy.connection.CredentialHeader != "" || strings.HasPrefix(proxy.connection.ContributionID, "plugin:") {
+		if proxy.resolveCredential == nil {
+			writeRemoteMCPError(w, rpcRequest.ID, -32005, "Remote MCP credential is revoked or unavailable")
+			return
+		}
 		credentialHeaders, err = proxy.resolveCredential(request.Context(), proxy.connection.ContributionID)
 		if err != nil {
 			resultClass = "credential_revoked"

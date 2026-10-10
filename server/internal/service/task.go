@@ -6882,6 +6882,17 @@ func (s *TaskService) LoadAgentSkills(ctx context.Context, agentID pgtype.UUID) 
 // scoped load so the two cannot drift on skill order, per-skill file order, or
 // the nil (not empty) file list of a skill that has none.
 func (s *TaskService) skillsWithFiles(ctx context.Context, skills []db.Skill) ([]AgentSkillData, error) {
+	plugins := &PluginService{Queries: s.Queries, FeatureFlags: s.FeatureFlags, FlagResolver: s.FlagResolver}
+	active := make([]db.Skill, 0, len(skills))
+	for _, skill := range skills {
+		if plugins.SkillActive(ctx, skill) {
+			active = append(active, skill)
+		}
+	}
+	skills = active
+	if len(skills) == 0 {
+		return nil, nil
+	}
 	skillIDs := make([]pgtype.UUID, len(skills))
 	for i, sk := range skills {
 		skillIDs[i] = sk.ID

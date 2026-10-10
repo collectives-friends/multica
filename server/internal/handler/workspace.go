@@ -1122,10 +1122,6 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 	qtx := h.Queries.WithTx(tx)
-	if err := qtx.LockWorkspaceFlagWrites(r.Context(), uuidToString(requester.WorkspaceID)); err != nil {
-		writeError(w, 500, "failed to lock workspace flags")
-		return
-	}
 	var sourceContextAttachmentURLs []string
 	var sourceContextIntentURLs []string
 
@@ -1136,6 +1132,11 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 	lockTimeoutMs := int(effectiveWorkspaceDeleteLockTimeout() / time.Millisecond)
 	if _, err := tx.Exec(r.Context(), fmt.Sprintf("SET LOCAL lock_timeout = %d", lockTimeoutMs)); err != nil {
 		failWorkspaceDelete(w, r, workspaceID, "set lock timeout", err)
+		return
+	}
+
+	if err := qtx.LockWorkspaceFlagWrites(r.Context(), uuidToString(requester.WorkspaceID)); err != nil {
+		failWorkspaceDelete(w, r, workspaceID, "lock workspace flags", err)
 		return
 	}
 

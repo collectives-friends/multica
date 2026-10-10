@@ -162,3 +162,17 @@ func TestFrozenHostDoesNotDependOnDatabase(t *testing.T) {
 		t.Fatalf("frozen host value changed on database failure: %+v", got)
 	}
 }
+
+func TestPluginFlagKeepsMasterGateWithExplicitHostParent(t *testing.T) {
+	key := "plugin:example:beta"
+	source := &memorySource{workspace: map[string]Override{ComposioMCPApps: {Enabled: true}}, definitions: []Definition{{Key: key, Default: true, ScopePolicy: MemberOverridable, Parent: ComposioMCPApps, PluginInstallationID: "installation"}}}
+	resolver := NewResolver(HostRegistry(), nil, source)
+	if got := resolver.Explain(context.Background(), "w", "u", key); got.Value || got.Source != "parent:plugins_v1" {
+		t.Fatalf("plugin snapshot bypasses master gate: %+v", got)
+	}
+	source.workspace[PluginsV1] = Override{Enabled: true}
+	resolver.Invalidate("w")
+	if !resolver.EnabledFor(context.Background(), "w", "u", key) {
+		t.Fatal("explicit parent and master both on must allow flag")
+	}
+}

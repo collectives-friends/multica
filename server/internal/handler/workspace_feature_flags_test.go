@@ -108,3 +108,20 @@ func TestFlagPermissionsAndUnknownKeys(t *testing.T) {
 		t.Fatal("rejected writes created audits")
 	}
 }
+
+func TestWorkspaceFlagEndpointIncludesInstalledPluginDefinitions(t *testing.T) {
+	manifest := `{"manifest_version":2,"key":"com.example.workspace-flags","name":"Workspace flags","version":"1.0.0","author":{"name":"Test"},"scopes":[],"contributes":{"flags":[{"key":"beta","label":"Beta","default":true,"scope_policy":"member_overridable"}],"surfaces":[{"key":"panel","name":"Panel","type":"issue_panel","entry":"ui.js","requires_flag":"beta"}]}}`
+	installationID := dbfx.Insert(t, "plugin_installation", testutil.Cols{"workspace_id": testWorkspaceID, "plugin_key": "com.example.workspace-flags", "manifest": manifest, "enabled": true, "granted_scopes": []string{}, "token_hash": "test-flags", "version": "1.0.0", "package_version_id": "11111111-1111-1111-1111-111111111111"})
+	request := pluginHandlerRequest("GET", "/", nil, map[string]string{"id": testWorkspaceID})
+	var view featureflags.View
+	testutil.Call(t, testHandler.GetFeatureFlags, request).Want(200).JSON(&view)
+	for _, d := range view.Definitions {
+		if d.Key == "plugin:com.example.workspace-flags:beta" {
+			if d.PluginInstallationID != installationID {
+				t.Fatalf("installation: %+v", d)
+			}
+			return
+		}
+	}
+	t.Fatal("installed plugin flag missing from authenticated catalog")
+}

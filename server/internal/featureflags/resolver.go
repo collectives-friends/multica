@@ -183,6 +183,11 @@ func (r *Resolver) resolve(ctx context.Context, s *state, u, key string, fallbac
 	if d.Frozen != nil {
 		return Decision{*d.Frozen, "frozen", true}
 	}
+	// A manifest may choose another public host parent; installation flags
+	// still depend on the workspace-only plugin capability.
+	if d.PluginInstallationID != "" && !r.resolve(ctx, s, "", PluginsV1, false).Value {
+		return Decision{false, "parent:" + PluginsV1, true}
+	}
 	if d.Parent != "" && !r.resolve(ctx, s, u, d.Parent, false).Value {
 		return Decision{false, "parent:" + d.Parent, true}
 	}

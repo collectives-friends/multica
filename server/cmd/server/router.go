@@ -453,7 +453,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	h.InvitationRateLimiters = handler.NewMemoryInvitationRateLimiters(invitationRateLimits)
 	h.Metrics = opts.BusinessMetrics
 	h.FeatureFlags = opts.FeatureFlags
-	h.FlagResolver = featureflags.NewResolver(featureflags.HostRegistry(), opts.FeatureFlags, featureflags.DBSource{Queries: queries})
+	h.FlagResolver = featureflags.NewResolver(featureflags.HostRegistry(), opts.FeatureFlags, featureflags.DBSource{Queries: queries, PluginDefinitions: func(ctx context.Context, workspaceID string) ([]featureflags.Definition, error) {
+		return service.PluginFlagDefinitions(ctx, queries, workspaceID)
+	}})
 	h.TaskService.FlagResolver = h.FlagResolver
 	h.TaskService.FeatureFlags = opts.FeatureFlags
 	h.TaskService.Metrics = opts.BusinessMetrics
@@ -1352,6 +1354,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// The flag reaches the event path only through the service: a worker has
 		// no request to read it from.
 		h.PluginService.FeatureFlags = h.FeatureFlags
+		h.PluginService.FlagResolver = h.FlagResolver
 		pluginEvents := service.NewPluginEventDispatcher(h.PluginService)
 		service.SubscribePluginEvents(bus, pluginEvents)
 	}

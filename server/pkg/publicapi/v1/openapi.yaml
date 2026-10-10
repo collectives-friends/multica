@@ -253,7 +253,7 @@ components:
         message: { type: string }
     Context:
       type: object
-      required: [workspace, config, granted_net_domains, actor]
+      required: [workspace, config, granted_net_domains, actor, flags]
       properties:
         workspace:
           $ref: "#/components/schemas/ContextWorkspace"
@@ -264,6 +264,10 @@ components:
         config:
           type: object
           additionalProperties: true
+        flags:
+          type: object
+          description: Own short flag keys and referenced public host flags (host:<key>), resolved for the current actor.
+          additionalProperties: { type: boolean }
         granted_net_domains:
           type: array
           items: { type: string }

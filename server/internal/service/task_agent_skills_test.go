@@ -241,3 +241,19 @@ func TestLoadAgentSkillBundles_FailsClosedOnReadFailure(t *testing.T) {
 		t.Fatalf("returned %d bundles / %d refs alongside an error, want none", len(bundles), len(refs))
 	}
 }
+
+// Stale bindings must not deliver a plugin skill after its installation is gone.
+// Regular workspace skills still load with their files.
+func TestLoadAgentSkillsFiltersInactivePluginBindings(t *testing.T) {
+	pluginRow := skillRow(testUUID(1), "plugin-skill", "", "plugin instructions")
+	pluginRow[len(pluginRow)-1] = testUUID(8)
+	fake := &skillReadDBTX{skills: [][]any{pluginRow, skillRow(testUUID(2), "ordinary", "", "regular instructions")}}
+	svc := &TaskService{Queries: db.New(fake)}
+	got, err := svc.LoadAgentSkills(context.Background(), testUUID(9))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Name != "ordinary" {
+		t.Fatalf("inactive plugin skill leaked into claim: %+v", got)
+	}
+}
