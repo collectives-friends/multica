@@ -129,6 +129,7 @@ test.describe("workspace feature flags and installed v2 plugin", () => {
       await expect(otherPage.locator(FRAME)).toBeVisible();
       await expect(panel(memberPage).getByTestId("feature-hint")).toBeVisible();
       await expect(panel(memberPage).locator("#root")).toHaveAttribute("data-context-show-hint", "true");
+      await memberPage.screenshot({ path: testInfo.outputPath("features-member-panel-on.png"), fullPage: true });
       const mainDocument = await memberPage.evaluate(() => performance.timeOrigin);
       const guestDocument = await panel(memberPage).locator("body").evaluate(() => performance.timeOrigin);
       const initialChanges = Number(await panel(memberPage).locator("#root").getAttribute("data-flag-changes"));
@@ -164,6 +165,7 @@ test.describe("workspace feature flags and installed v2 plugin", () => {
       await expect(otherPage.locator(FRAME)).toBeVisible();
       expect(await memberPage.evaluate(() => performance.timeOrigin)).toBe(mainDocument);
       expect((await snapshot(member, otherWorkspace)).resolved[PANEL_FLAG].value).toBe(true);
+      await memberPage.screenshot({ path: testInfo.outputPath("features-member-panel-off.png"), fullPage: true });
       await writeFile(testInfo.outputPath("live-flags-evidence.json"), JSON.stringify({ workspaceIsolated: true, mainDocumentPreserved: true, guestDocumentPreservedForHintChange: true }, null, 2));
     } finally {
       await Promise.all(contexts.map((context) => context.close()));
