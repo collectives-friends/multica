@@ -3,8 +3,10 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/multica-ai/multica/server/internal/featureflags"
@@ -13,6 +15,8 @@ import (
 )
 
 func TestWorkspaceFlagRoundTripAndAudit(t *testing.T) {
+	testWorkspaceID := dbfx.Workspace(t, "Flag roundtrip", "flag-roundtrip")
+	dbfx.Member(t, testWorkspaceID, testUserID, "owner")
 	old := testHandler.FlagResolver
 	registry, err := featureflags.NewRegistry(append(featureflags.HostRegistry().Definitions(), featureflags.Definition{Key: "personal_test", ScopePolicy: featureflags.MemberOverridable}))
 	if err != nil {
@@ -69,6 +73,8 @@ func TestHostWorkspaceGate(t *testing.T) {
 }
 
 func TestFlagPermissionsAndUnknownKeys(t *testing.T) {
+	testWorkspaceID := dbfx.Workspace(t, "Flag permissions", "flag-permissions")
+	dbfx.Member(t, testWorkspaceID, testUserID, "owner")
 	dbfx.Cleanup(t, "DELETE FROM workspace_feature_flag_override WHERE workspace_id=$1", testWorkspaceID)
 	dbfx.Cleanup(t, "DELETE FROM workspace_feature_flag_audit WHERE workspace_id=$1", testWorkspaceID)
 	req := func(key string) *http.Request {
@@ -110,6 +116,8 @@ func TestFlagPermissionsAndUnknownKeys(t *testing.T) {
 }
 
 func TestWorkspaceFlagEndpointIncludesInstalledPluginDefinitions(t *testing.T) {
+	dbfx.Cleanup(t, "DELETE FROM workspace_feature_flag_override WHERE workspace_id=$1 AND flag_key=$2", testWorkspaceID, "plugin:com.example.workspace-flags:beta")
+	dbfx.Cleanup(t, "DELETE FROM workspace_feature_flag_audit WHERE workspace_id=$1 AND flag_key=$2", testWorkspaceID, "plugin:com.example.workspace-flags:beta")
 	manifest := `{"manifest_version":2,"key":"com.example.workspace-flags","name":"Workspace flags","version":"1.0.0","author":{"name":"Test"},"scopes":[],"contributes":{"flags":[{"key":"beta","label":"Beta","default":true,"scope_policy":"member_overridable"}],"surfaces":[{"key":"panel","name":"Panel","type":"issue_panel","entry":"ui.js","requires_flag":"beta"}]}}`
 	installationID := dbfx.Insert(t, "plugin_installation", testutil.Cols{"workspace_id": testWorkspaceID, "plugin_key": "com.example.workspace-flags", "manifest": manifest, "enabled": true, "granted_scopes": []string{}, "token_hash": "test-flags", "version": "1.0.0", "package_version_id": "11111111-1111-1111-1111-111111111111"})
 	request := pluginHandlerRequest("GET", "/", nil, map[string]string{"id": testWorkspaceID})
@@ -119,6 +127,22 @@ func TestWorkspaceFlagEndpointIncludesInstalledPluginDefinitions(t *testing.T) {
 		if d.Key == "plugin:com.example.workspace-flags:beta" {
 			if d.PluginInstallationID != installationID {
 				t.Fatalf("installation: %+v", d)
+			}
+			router := chi.NewRouter()
+			router.Put("/api/workspaces/{id}/feature-flags/{key}", testHandler.SetMemberFeatureFlag)
+			router.Delete("/api/workspaces/{id}/feature-flags/{key}", testHandler.DeleteMemberFeatureFlag)
+			for _, method := range []string{"PUT", "DELETE"} {
+				req := httptest.NewRequest(method, "/api/workspaces/"+testWorkspaceID+"/feature-flags/plugin%3Acom.example.workspace-flags%3Abeta", strings.NewReader(`{"enabled":false}`))
+				req.Header.Set("X-User-ID", testUserID)
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, req)
+				want := 200
+				if method == "DELETE" {
+					want = 204
+				}
+				if rec.Code != want {
+					t.Fatalf("encoded plugin key %s: %d %s", method, rec.Code, rec.Body.String())
+				}
 			}
 			return
 		}

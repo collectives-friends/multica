@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -106,7 +107,11 @@ func (h *Handler) writeFeatureFlag(w http.ResponseWriter, r *http.Request, works
 	if !ok {
 		return
 	}
-	key := chi.URLParam(r, "key")
+	key, err := url.PathUnescape(chi.URLParam(r, "key"))
+	if err != nil {
+		writeError(w, 400, "invalid feature flag key")
+		return
+	}
 	var body struct {
 		Enabled *bool   `json:"enabled"`
 		Locked  *bool   `json:"locked"`
