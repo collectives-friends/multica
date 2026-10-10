@@ -251,12 +251,9 @@ func runFeatureHistory(cmd *cobra.Command, args []string) error {
 	}
 	ctx, cancel := cli.APIContext(cmd.Context())
 	defer cancel()
-	snapshot, err := loadFeatureSnapshot(ctx, client, path)
-	if err != nil {
-		return err
-	}
 	var result struct {
-		// Current is the effective resolution; absent when the key is no longer defined.
+		// Current is the effective resolution; absent when the key is no longer defined
+		// or the snapshot is unavailable, so audit history stays readable on its own.
 		Current    *featureResolution `json:"current,omitempty"`
 		Entries    []map[string]any   `json:"entries"`
 		NextBefore string             `json:"next_before,omitempty"`
@@ -267,8 +264,10 @@ func runFeatureHistory(cmd *cobra.Command, args []string) error {
 	if result.Entries == nil {
 		return fmt.Errorf("invalid feature history response: missing entries")
 	}
-	if resolved, ok := snapshot.Resolved[args[0]]; ok && resolved.Value != nil {
-		result.Current = &resolved
+	if snapshot, err := loadFeatureSnapshot(ctx, client, path); err == nil {
+		if resolved, ok := snapshot.Resolved[args[0]]; ok {
+			result.Current = &resolved
+		}
 	}
 	if output, _ := cmd.Flags().GetString("output"); output == "json" {
 		return cli.PrintJSON(os.Stdout, result)

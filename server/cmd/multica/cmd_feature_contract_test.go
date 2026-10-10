@@ -230,10 +230,24 @@ func TestFeatureHistoryShowsEffectiveSource(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(out, "Source: "+source) || !strings.Contains(out, "workspace") || len(paths) != 2 || !strings.Contains(paths[1], "/audit?key=board") {
+			if !strings.Contains(out, "Source: "+source) || !strings.Contains(out, "user:user-1") || len(paths) != 2 || !strings.Contains(paths[0], "/audit?key=board") {
 				t.Fatalf("paths=%v output=%s", paths, out)
 			}
 		})
+	}
+}
+
+func TestFeatureHistorySurvivesUnavailableSnapshot(t *testing.T) {
+	featureTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/workspaces/ws-1/feature-flags/audit" {
+			_, _ = w.Write([]byte(`{"entries":[{"scope_type":"workspace","action":"set","actor_type":"user","actor_id":"user-1"}]}`))
+			return
+		}
+		http.Error(w, `{"error":"feature flag state unavailable"}`, http.StatusServiceUnavailable)
+	})
+	out, err := executeFeature(t, "history", "board", "--output", "json")
+	if err != nil || strings.Contains(out, "current") || !strings.Contains(out, "user-1") {
+		t.Fatalf("output=%s error=%v", out, err)
 	}
 }
 
