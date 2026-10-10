@@ -15,6 +15,23 @@ it("reads flags through context and tolerates older hosts", async () => {
   expect(await multica.flags.get("missing", true)).toBe(true);
   expect(await multica.flags.all()).toEqual({});
 });
+it.each(["constructor", "__proto__", "toString"])(
+  "uses the fallback for an absent flag named %s",
+  async (key) => {
+    const { multica } = await sdk();
+    expect(await multica.flags.get(key)).toBe(false);
+    expect(await multica.flags.get(key, true)).toBe(true);
+  },
+);
+it.each([true, false])("reads an own constructor flag set to %s", async (value) => {
+  const { multica } = await sdk({ constructor: value });
+  expect(await multica.flags.get("constructor", !value)).toBe(value);
+});
+it("uses the fallback for a nonboolean context flag", async () => {
+  const { multica } = await sdk(JSON.parse('{"beta":"enabled"}'));
+  expect(await multica.flags.get("beta")).toBe(false);
+  expect(await multica.flags.get("beta", true)).toBe(true);
+});
 it("retains an event before the first get and updates cached context", async () => {
   const { multica, host } = await sdk({ beta: false });
   const listener = vi.fn(); const unsubscribe = multica.flags.onChange(listener);

@@ -225,7 +225,10 @@ export const multica = {
 
   flags: {
     async get(key: string, fallback = false): Promise<boolean> {
-      return (await multica.flags.all())[key] ?? fallback;
+      const flags = await multica.flags.all();
+      return Object.hasOwn(flags, key) && typeof flags[key] === "boolean"
+        ? flags[key]
+        : fallback;
     },
     async all(): Promise<Record<string, boolean>> {
       if (latestFlags === null) await multica.context.get();
