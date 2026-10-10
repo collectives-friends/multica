@@ -125,3 +125,43 @@ func TestWorkspaceFlagEndpointIncludesInstalledPluginDefinitions(t *testing.T) {
 	}
 	t.Fatal("installed plugin flag missing from authenticated catalog")
 }
+
+func TestFeatureFlagActorPermissionMatrix(t *testing.T) {
+	for _, role := range []string{"member", "admin", "owner"} {
+		for _, actor := range []string{"member", "agent"} {
+			t.Run(role+"/"+actor, func(t *testing.T) {
+				ws := dbfx.Workspace(t, "Flags matrix", "flags-"+role+"-"+actor)
+				user := dbfx.User(t, "Flag actor", "flags-"+role+"-"+actor+"@example.test")
+				dbfx.Member(t, ws, user, role)
+				dbfx.Cleanup(t, "DELETE FROM workspace_feature_flag_override WHERE workspace_id=$1", ws)
+				dbfx.Cleanup(t, "DELETE FROM workspace_feature_flag_audit WHERE workspace_id=$1", ws)
+				request := pluginHandlerRequest("PUT", "/", []byte(`{"enabled":true,"locked":true}`), map[string]string{"id": ws, "key": "plugins_v1"})
+				request.Header.Set("X-User-ID", user)
+				actorID := user
+				if actor == "agent" {
+					actorID = "11111111-1111-1111-1111-111111111111"
+					// These headers are set exclusively by verified task-token middleware.
+					request.Header.Set("X-Actor-Source", "task_token")
+					request.Header.Set("X-Workspace-ID", ws)
+					request.Header.Set("X-Agent-ID", actorID)
+				}
+				status := 200
+				if role == "member" {
+					status = 403
+				}
+				testutil.Call(t, testHandler.SetWorkspaceFeatureFlag, request).Want(status)
+				var count int
+				if err := testPool.QueryRow(context.Background(), "SELECT count(*) FROM workspace_feature_flag_audit WHERE workspace_id=$1 AND actor_type=$2 AND actor_id=$3", ws, actor, actorID).Scan(&count); err != nil {
+					t.Fatal(err)
+				}
+				want := 1
+				if role == "member" {
+					want = 0
+				}
+				if count != want {
+					t.Fatalf("audited writes=%d want=%d", count, want)
+				}
+			})
+		}
+	}
+}

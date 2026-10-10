@@ -6885,7 +6885,11 @@ func (s *TaskService) skillsWithFiles(ctx context.Context, skills []db.Skill) ([
 	plugins := &PluginService{Queries: s.Queries, FeatureFlags: s.FeatureFlags, FlagResolver: s.FlagResolver}
 	active := make([]db.Skill, 0, len(skills))
 	for _, skill := range skills {
-		if plugins.SkillActive(ctx, skill) {
+		enabled, err := plugins.ResolveSkillActive(ctx, skill)
+		if err != nil {
+			return nil, fmt.Errorf("resolve plugin skill %s: %w", util.UUIDToString(skill.ID), err)
+		}
+		if enabled {
 			active = append(active, skill)
 		}
 	}

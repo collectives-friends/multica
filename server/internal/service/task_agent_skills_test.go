@@ -257,3 +257,19 @@ func TestLoadAgentSkillsFiltersInactivePluginBindings(t *testing.T) {
 		t.Fatalf("inactive plugin skill leaked into claim: %+v", got)
 	}
 }
+
+type pluginSkillLookupFailureDB struct{ skillReadDBTX }
+
+func (d *pluginSkillLookupFailureDB) QueryRow(context.Context, string, ...any) pgx.Row {
+	return errRow{err: errInjectedSkillRead}
+}
+func TestLoadAgentSkillsReportsPluginLookupFailure(t *testing.T) {
+	row := skillRow(testUUID(1), "plugin-skill", "", "instructions")
+	row[len(row)-1] = testUUID(8)
+	fake := &pluginSkillLookupFailureDB{skillReadDBTX{skills: [][]any{row}}}
+	svc := &TaskService{Queries: db.New(fake)}
+	got, err := svc.LoadAgentSkills(context.Background(), testUUID(9))
+	if !errors.Is(err, errInjectedSkillRead) || len(got) != 0 {
+		t.Fatalf("lookup failure silently shrank skill set: %+v, %v", got, err)
+	}
+}
