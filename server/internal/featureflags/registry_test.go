@@ -60,6 +60,9 @@ func TestParseDefinitionsRejects(t *testing.T) {
 		"plugin install id": `[{"key":"a","label":"A","plugin_installation_id":"x"}]`,
 		"unknown field":     `[{"key":"a","label":"A","owner":"ops"}]`,
 		"too many":          "[" + strings.Join(many, ",") + "]",
+		"env alias of host": `[{"key":"plugins.v1","label":"A"}]`,
+		"env alias pair":    `[{"key":"a.b","label":"A"},{"key":"a_b","label":"B"}]`,
+		"reserved route":    `[{"key":"audit","label":"A"}]`,
 	}
 	for name, raw := range cases {
 		t.Run(name, func(t *testing.T) {

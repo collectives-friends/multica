@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/multica-ai/multica/server/pkg/featureflag"
 	"io"
 	"os"
 	"regexp"
@@ -155,8 +156,11 @@ func ParseDefinitions(raw string) ([]Definition, error) {
 		return nil, fmt.Errorf("at most %d definitions are allowed, got %d", maxDeploymentDefinitions, len(input))
 	}
 	builtin := map[string]bool{}
+	// FF_<KEY> deployment overrides normalize keys; an alias would share one override.
+	envNames := map[string]string{}
 	for _, d := range builtinDefinitions() {
 		builtin[d.Key] = true
+		envNames[featureflag.EnvName(d.Key)] = d.Key
 	}
 	seen := map[string]bool{}
 	defs := make([]Definition, 0, len(input))
@@ -168,10 +172,15 @@ func ParseDefinitions(raw string) ([]Definition, error) {
 			return nil, fmt.Errorf("definition %d: key %q is a built-in host flag", i, in.Key)
 		case seen[in.Key]:
 			return nil, fmt.Errorf("definition %d: duplicate key %q", i, in.Key)
+		case in.Key == "audit":
+			return nil, fmt.Errorf("definition %d: key %q is reserved by the feature-flag API", i, in.Key)
+		case envNames[featureflag.EnvName(in.Key)] != "":
+			return nil, fmt.Errorf("definition %d: key %q shares deployment override FF_%s with %q", i, in.Key, featureflag.EnvName(in.Key), envNames[featureflag.EnvName(in.Key)])
 		case strings.TrimSpace(in.Label) == "":
 			return nil, fmt.Errorf("definition %d: label is required for %q", i, in.Key)
 		}
 		seen[in.Key] = true
+		envNames[featureflag.EnvName(in.Key)] = in.Key
 		if in.ScopePolicy == "" {
 			in.ScopePolicy = WorkspaceOnly
 		}
