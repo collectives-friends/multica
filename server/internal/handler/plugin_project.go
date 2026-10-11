@@ -52,16 +52,17 @@ func (h *Handler) GetPluginInstallationAuthorization(w http.ResponseWriter, r *h
 }
 
 type pluginProject struct {
-	ID          string  `json:"id"`
-	WorkspaceID string  `json:"workspace_id"`
-	Title       string  `json:"title"`
-	Description *string `json:"description"`
-	Status      string  `json:"status"`
-	Revision    int64   `json:"revision"`
+	ID          string          `json:"id"`
+	WorkspaceID string          `json:"workspace_id"`
+	Title       string          `json:"title"`
+	Description *string         `json:"description"`
+	Status      string          `json:"status"`
+	Revision    int64           `json:"revision"`
+	Properties  json.RawMessage `json:"properties"`
 }
 
 func pluginProjectDTO(p db.Project) pluginProject {
-	return pluginProject{uuidToString(p.ID), uuidToString(p.WorkspaceID), p.Title, textToPtr(p.Description), p.Status, p.Revision}
+	return pluginProject{uuidToString(p.ID), uuidToString(p.WorkspaceID), p.Title, textToPtr(p.Description), p.Status, p.Revision, json.RawMessage(projectPropertiesJSON(p.Properties))}
 }
 
 func (h *Handler) pluginProjectCaller(w http.ResponseWriter, r *http.Request, scope string) (service.PluginActionCaller, bool) {
@@ -112,6 +113,7 @@ type pluginProjectMutation struct {
 	Title            *string         `json:"title,omitempty"`
 	Description      json.RawMessage `json:"description,omitempty"`
 	Status           *string         `json:"status,omitempty"`
+	Properties       json.RawMessage `json:"properties,omitempty"`
 }
 
 func (h *Handler) CreatePluginProject(w http.ResponseWriter, r *http.Request) {
@@ -154,7 +156,7 @@ func (h *Handler) mutatePluginProject(w http.ResponseWriter, r *http.Request, cr
 		invalid("expected_revision is required")
 		return
 	}
-	if !create && req.Title == nil && req.Status == nil && req.Description == nil {
+	if !create && req.Title == nil && req.Status == nil && req.Description == nil && req.Properties == nil {
 		invalid("at least one field is required")
 		return
 	}
@@ -174,6 +176,59 @@ func (h *Handler) mutatePluginProject(w http.ResponseWriter, r *http.Request, cr
 	if description != nil && strings.ContainsRune(*description, 0) {
 		invalid("description cannot contain null bytes")
 		return
+	}
+	// Property values reference integration-owned project definitions only.
+	// Each value is validated against its definition before the write, and the
+	// bag merges per key so other owners' properties are never clobbered.
+	var properties []byte
+	if req.Properties != nil {
+		var bag map[string]json.RawMessage
+		if err := json.Unmarshal(req.Properties, &bag); err != nil {
+			invalid("properties must be an object keyed by definition UUID")
+			return
+		}
+		if len(bag) > 0 && !h.workspaceFlagEnabled(r.Context(), uuidToString(c.WorkspaceID), ProjectPropertiesFlag) {
+			publicapiv1.WriteProblem(w, r, http.StatusForbidden, "capability_disabled", "project properties are not enabled for this workspace")
+			return
+		}
+		canonical := make(map[string]json.RawMessage, len(bag))
+		for key, raw := range bag {
+			defUUID, err := util.ParseUUID(key)
+			if err != nil {
+				invalid("properties keys must be definition UUIDs")
+				return
+			}
+			def, err := h.Queries.GetIssueProperty(r.Context(), db.GetIssuePropertyParams{ID: defUUID, WorkspaceID: c.WorkspaceID})
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					invalid("properties reference an unknown definition")
+					return
+				}
+				publicapiv1.WriteProblem(w, r, http.StatusServiceUnavailable, "unavailable", "property definitions unavailable")
+				return
+			}
+			if def.ResourceType != propertyResourceTypeProject || !def.OwnerInstallationID.Valid || def.OwnerInstallationID != c.Installation.ID {
+				publicapiv1.WriteProblem(w, r, http.StatusForbidden, "forbidden", "property values may only be written for definitions owned by this installation")
+				return
+			}
+			if def.ArchivedAt.Valid {
+				invalid("properties reference an archived definition")
+				return
+			}
+			value, err := validatePropertyValue(def, raw)
+			if err != nil {
+				invalid("invalid value for property " + def.Name + ": " + err.Error())
+				return
+			}
+			canonical[uuidToString(defUUID)] = json.RawMessage(value)
+		}
+		properties, err = json.Marshal(canonical)
+		if err != nil {
+			invalid("properties are invalid")
+			return
+		}
+	} else {
+		properties = json.RawMessage(`{}`)
 	}
 	var projectID pgtype.UUID
 	if !create {
@@ -238,9 +293,9 @@ func (h *Handler) mutatePluginProject(w http.ResponseWriter, r *http.Request, cr
 		if req.Status != nil {
 			status = *req.Status
 		}
-		project, err = q.CreatePluginProject(r.Context(), db.CreatePluginProjectParams{ID: operationID, WorkspaceID: c.WorkspaceID, Title: *req.Title, Description: ptrToText(description), Status: status})
+		project, err = q.CreatePluginProject(r.Context(), db.CreatePluginProjectParams{ID: operationID, WorkspaceID: c.WorkspaceID, Title: *req.Title, Description: ptrToText(description), Status: status, Properties: properties})
 	} else {
-		project, err = q.PatchPluginProject(r.Context(), db.PatchPluginProjectParams{ID: projectID, WorkspaceID: c.WorkspaceID, ExpectedRevision: req.ExpectedRevision, Title: ptrToText(req.Title), Description: ptrToText(description), SetDescription: req.Description != nil, Status: ptrToText(req.Status)})
+		project, err = q.PatchPluginProject(r.Context(), db.PatchPluginProjectParams{ID: projectID, WorkspaceID: c.WorkspaceID, ExpectedRevision: req.ExpectedRevision, Title: ptrToText(req.Title), Description: ptrToText(description), SetDescription: req.Description != nil, Status: ptrToText(req.Status), SetProperties: req.Properties != nil, Properties: properties})
 	}
 	var constraint *pgconn.PgError
 	if errors.As(err, &constraint) && constraint.Code == "23505" {

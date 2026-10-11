@@ -54,6 +54,31 @@ const (
 
 var validPropertyTypes = []string{"text", "number", "select", "multi_select", "date", "checkbox", "url", "actor", "multi_actor", "multi_text", "multi_url"}
 
+const (
+	propertyResourceTypeIssue   = "issue"
+	propertyResourceTypeProject = "project"
+	// ProjectPropertiesFlag gates the project-level property capability
+	// (TCO-293). It fails closed: an unknown key evaluates to the default
+	// (off), so the capability stays unavailable until the deployment
+	// declares tc.projectproperties.
+	ProjectPropertiesFlag = "tc.projectproperties"
+)
+
+// parsePropertyResourceType resolves the resource_type parameter; missing or
+// empty defaults to issue so installed clients keep the old behavior.
+func parsePropertyResourceType(raw string) (string, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return propertyResourceTypeIssue, nil
+	}
+	switch value {
+	case propertyResourceTypeIssue, propertyResourceTypeProject:
+		return value, nil
+	default:
+		return "", fmt.Errorf("resource_type must be %q or %q", propertyResourceTypeIssue, propertyResourceTypeProject)
+	}
+}
+
 // Property icons use stable catalog keys that the Web client maps to Lucide
 // glyphs. Keeping this allowlist at the API boundary prevents arbitrary text
 // (including emoji) from leaking into every issue surface that renders icons.
@@ -98,19 +123,21 @@ type PropertyConfig struct {
 }
 
 type PropertyResponse struct {
-	ID          string         `json:"id"`
-	WorkspaceID string         `json:"workspace_id"`
-	Name        string         `json:"name"`
-	Type        string         `json:"type"`
-	Description string         `json:"description"`
-	Icon        string         `json:"icon"`
-	Config      PropertyConfig `json:"config"`
-	Position    float64        `json:"position"`
-	Archived    bool           `json:"archived"`
-	ArchivedAt  *string        `json:"archived_at"`
-	UsageCount  int64          `json:"usage_count"`
-	CreatedAt   string         `json:"created_at"`
-	UpdatedAt   string         `json:"updated_at"`
+	ID                  string         `json:"id"`
+	WorkspaceID         string         `json:"workspace_id"`
+	Name                string         `json:"name"`
+	Type                string         `json:"type"`
+	Description         string         `json:"description"`
+	Icon                string         `json:"icon"`
+	Config              PropertyConfig `json:"config"`
+	Position            float64        `json:"position"`
+	Archived            bool           `json:"archived"`
+	ArchivedAt          *string        `json:"archived_at"`
+	UsageCount          int64          `json:"usage_count"`
+	CreatedAt           string         `json:"created_at"`
+	UpdatedAt           string         `json:"updated_at"`
+	ResourceType        string         `json:"resource_type"`
+	OwnerInstallationID *string        `json:"owner_installation_id,omitempty"`
 }
 
 func parsePropertyConfig(raw []byte) PropertyConfig {
@@ -126,18 +153,23 @@ func parsePropertyConfig(raw []byte) PropertyConfig {
 
 func propertyToResponse(p db.IssueProperty, usageCount int64) PropertyResponse {
 	resp := PropertyResponse{
-		ID:          uuidToString(p.ID),
-		WorkspaceID: uuidToString(p.WorkspaceID),
-		Name:        p.Name,
-		Type:        p.Type,
-		Description: p.Description,
-		Icon:        p.Icon,
-		Config:      parsePropertyConfig(p.Config),
-		Position:    p.Position,
-		Archived:    p.ArchivedAt.Valid,
-		UsageCount:  usageCount,
-		CreatedAt:   timestampToString(p.CreatedAt),
-		UpdatedAt:   timestampToString(p.UpdatedAt),
+		ID:           uuidToString(p.ID),
+		WorkspaceID:  uuidToString(p.WorkspaceID),
+		Name:         p.Name,
+		Type:         p.Type,
+		Description:  p.Description,
+		Icon:         p.Icon,
+		Config:       parsePropertyConfig(p.Config),
+		Position:     p.Position,
+		Archived:     p.ArchivedAt.Valid,
+		UsageCount:   usageCount,
+		CreatedAt:    timestampToString(p.CreatedAt),
+		UpdatedAt:    timestampToString(p.UpdatedAt),
+		ResourceType: p.ResourceType,
+	}
+	if p.OwnerInstallationID.Valid {
+		s := uuidToString(p.OwnerInstallationID)
+		resp.OwnerInstallationID = &s
 	}
 	if p.ArchivedAt.Valid {
 		s := timestampToString(p.ArchivedAt)
@@ -148,26 +180,29 @@ func propertyToResponse(p db.IssueProperty, usageCount int64) PropertyResponse {
 
 func propertyListRowToResponse(row db.ListIssuePropertiesRow) PropertyResponse {
 	return propertyToResponse(db.IssueProperty{
-		ID:          row.ID,
-		WorkspaceID: row.WorkspaceID,
-		Name:        row.Name,
-		Type:        row.Type,
-		Description: row.Description,
-		Icon:        row.Icon,
-		Config:      row.Config,
-		Position:    row.Position,
-		ArchivedAt:  row.ArchivedAt,
-		CreatedAt:   row.CreatedAt,
-		UpdatedAt:   row.UpdatedAt,
+		ID:                  row.ID,
+		WorkspaceID:         row.WorkspaceID,
+		Name:                row.Name,
+		Type:                row.Type,
+		Description:         row.Description,
+		Icon:                row.Icon,
+		Config:              row.Config,
+		Position:            row.Position,
+		ArchivedAt:          row.ArchivedAt,
+		CreatedAt:           row.CreatedAt,
+		UpdatedAt:           row.UpdatedAt,
+		ResourceType:        row.ResourceType,
+		OwnerInstallationID: row.OwnerInstallationID,
 	}, row.UsageCount)
 }
 
 type CreatePropertyRequest struct {
-	Name        string          `json:"name"`
-	Type        string          `json:"type"`
-	Description string          `json:"description"`
-	Icon        string          `json:"icon"`
-	Config      *PropertyConfig `json:"config"`
+	Name         string          `json:"name"`
+	Type         string          `json:"type"`
+	Description  string          `json:"description"`
+	Icon         string          `json:"icon"`
+	Config       *PropertyConfig `json:"config"`
+	ResourceType string          `json:"resource_type"`
 }
 
 type UpdatePropertyRequest struct {
@@ -368,10 +403,34 @@ func removedOptionIDs(existingConfig, nextConfig []byte) []string {
 	return removed
 }
 
+// optionUsage is the resource-agnostic census row shape used by
+// describeOptionsInUse; both the issue and project censuses map onto it.
+type optionUsage struct {
+	OptionID   string
+	UsageCount int64
+}
+
+func issueOptionUsages(rows []db.CountIssuesUsingPropertyOptionsRow) []optionUsage {
+	out := make([]optionUsage, len(rows))
+	for i, row := range rows {
+		out[i] = optionUsage{OptionID: row.OptionID, UsageCount: row.UsageCount}
+	}
+	return out
+}
+
+func projectOptionUsages(rows []db.CountProjectsUsingPropertyOptionsRow) []optionUsage {
+	out := make([]optionUsage, len(rows))
+	for i, row := range rows {
+		out[i] = optionUsage{OptionID: row.OptionID, UsageCount: row.UsageCount}
+	}
+	return out
+}
+
 // describeOptionsInUse renders the 409 body for in-use option removal, e.g.
 // `cannot remove options still in use: "Critical" (3 issues); clear or
-// change those values first`.
-func describeOptionsInUse(existingConfig []byte, rows []db.CountIssuesUsingPropertyOptionsRow) string {
+// change those values first`. The noun matches the definition's resource
+// type so both issue and project censuses read naturally.
+func describeOptionsInUse(existingConfig []byte, noun string, rows []optionUsage) string {
 	names := make(map[string]string)
 	for _, opt := range parsePropertyConfig(existingConfig).Options {
 		names[opt.ID] = opt.Name
@@ -382,7 +441,7 @@ func describeOptionsInUse(existingConfig []byte, rows []db.CountIssuesUsingPrope
 		if name == "" {
 			name = row.OptionID
 		}
-		parts[i] = fmt.Sprintf("%q (%d issues)", name, row.UsageCount)
+		parts[i] = fmt.Sprintf("%q (%d %s)", name, row.UsageCount, noun)
 	}
 	sort.Strings(parts)
 	return "cannot remove options still in use: " + strings.Join(parts, ", ") + "; clear or change those values first"
@@ -424,10 +483,16 @@ func (h *Handler) ListProperties(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	resourceType, err := parsePropertyResourceType(r.URL.Query().Get("resource_type"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	includeArchived := r.URL.Query().Get("include_archived") == "true"
 	rows, err := h.Queries.ListIssueProperties(r.Context(), db.ListIssuePropertiesParams{
 		WorkspaceID:     wsUUID,
 		IncludeArchived: includeArchived,
+		ResourceType:    resourceType,
 	})
 	if err != nil {
 		slog.Warn("ListIssueProperties failed", append(logger.RequestAttrs(r), "error", err)...)
@@ -474,6 +539,15 @@ func (h *Handler) CreateProperty(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	resourceType, err := parsePropertyResourceType(req.ResourceType)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if resourceType == propertyResourceTypeProject && !h.workspaceFlagEnabled(r.Context(), workspaceID, ProjectPropertiesFlag) {
+		writeError(w, http.StatusForbidden, "project properties are not enabled for this workspace")
+		return
+	}
 	name, err := validatePropertyName(req.Name)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -505,7 +579,10 @@ func (h *Handler) CreateProperty(w http.ResponseWriter, r *http.Request) {
 	var property db.IssueProperty
 	var capErr error
 	err = h.withPropertyLock(r, []string{"props:" + workspaceID}, func(q *db.Queries) error {
-		active, err := q.CountActiveIssueProperties(r.Context(), wsUUID)
+		active, err := q.CountActiveIssueProperties(r.Context(), db.CountActiveIssuePropertiesParams{
+			WorkspaceID:  wsUUID,
+			ResourceType: resourceType,
+		})
 		if err != nil {
 			return err
 		}
@@ -514,12 +591,13 @@ func (h *Handler) CreateProperty(w http.ResponseWriter, r *http.Request) {
 			return capErr
 		}
 		property, err = q.CreateIssueProperty(r.Context(), db.CreateIssuePropertyParams{
-			WorkspaceID: wsUUID,
-			Name:        name,
-			Type:        req.Type,
-			Description: sanitizeNullBytes(strings.TrimSpace(req.Description)),
-			Icon:        icon,
-			Config:      configJSON,
+			WorkspaceID:  wsUUID,
+			Name:         name,
+			Type:         req.Type,
+			Description:  sanitizeNullBytes(strings.TrimSpace(req.Description)),
+			Icon:         icon,
+			Config:       configJSON,
+			ResourceType: resourceType,
 		})
 		return err
 	})
@@ -609,16 +687,30 @@ func (h *Handler) UpdateProperty(w http.ResponseWriter, r *http.Request) {
 				return fail(http.StatusBadRequest, err.Error())
 			}
 			if removed := removedOptionIDs(existing.Config, configJSON); len(removed) > 0 {
-				rows, err := q.CountIssuesUsingPropertyOptions(r.Context(), db.CountIssuesUsingPropertyOptionsParams{
-					OptionIds:   removed,
-					WorkspaceID: wsUUID,
-					PropertyKey: uuidToString(existing.ID),
-				})
-				if err != nil {
-					return err
-				}
-				if len(rows) > 0 {
-					return fail(http.StatusConflict, describeOptionsInUse(existing.Config, rows))
+				if existing.ResourceType == propertyResourceTypeProject {
+					rows, err := q.CountProjectsUsingPropertyOptions(r.Context(), db.CountProjectsUsingPropertyOptionsParams{
+						OptionIds:   removed,
+						WorkspaceID: wsUUID,
+						PropertyKey: uuidToString(existing.ID),
+					})
+					if err != nil {
+						return err
+					}
+					if len(rows) > 0 {
+						return fail(http.StatusConflict, describeOptionsInUse(existing.Config, "projects", projectOptionUsages(rows)))
+					}
+				} else {
+					rows, err := q.CountIssuesUsingPropertyOptions(r.Context(), db.CountIssuesUsingPropertyOptionsParams{
+						OptionIds:   removed,
+						WorkspaceID: wsUUID,
+						PropertyKey: uuidToString(existing.ID),
+					})
+					if err != nil {
+						return err
+					}
+					if len(rows) > 0 {
+						return fail(http.StatusConflict, describeOptionsInUse(existing.Config, "issues", issueOptionUsages(rows)))
+					}
 				}
 			}
 			params.Config = configJSON
@@ -628,7 +720,10 @@ func (h *Handler) UpdateProperty(w http.ResponseWriter, r *http.Request) {
 			if *req.Archived {
 				params.ArchivedAt = pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
 			} else if existing.ArchivedAt.Valid {
-				active, err := q.CountActiveIssueProperties(r.Context(), wsUUID)
+				active, err := q.CountActiveIssueProperties(r.Context(), db.CountActiveIssuePropertiesParams{
+					WorkspaceID:  wsUUID,
+					ResourceType: existing.ResourceType,
+				})
 				if err != nil {
 					return err
 				}

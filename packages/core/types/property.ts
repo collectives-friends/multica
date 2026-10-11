@@ -190,6 +190,10 @@ export interface IssueProperty {
   usage_count?: number;
   created_at: string;
   updated_at: string;
+  /** Which resource the definition targets; absent means "issue" (older servers). */
+  resource_type?: "issue" | "project";
+  /** Set for integration-owned project definitions; the integration is the sole writer. */
+  owner_installation_id?: string | null;
 }
 
 export type IssuePropertyValue = string | number | boolean | string[];

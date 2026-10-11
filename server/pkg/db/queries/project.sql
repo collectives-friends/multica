@@ -64,13 +64,15 @@ WHERE workspace_id = sqlc.arg('workspace_id')::uuid
 GROUP BY project_id;
 
 -- name: CreatePluginProject :one
-INSERT INTO project (id, workspace_id, title, description, status)
-VALUES ($1, $2, $3, $4, $5) RETURNING *;
+INSERT INTO project (id, workspace_id, title, description, status, properties)
+VALUES ($1, $2, $3, $4, $5, COALESCE(sqlc.narg('properties')::jsonb, '{}'::jsonb)) RETURNING *;
 
 -- name: PatchPluginProject :one
 UPDATE project SET title = COALESCE(sqlc.narg('title'), title),
  description = CASE WHEN sqlc.arg('set_description')::boolean THEN sqlc.narg('description')::text ELSE description END,
- status = COALESCE(sqlc.narg('status'), status), updated_at = clock_timestamp()
+ status = COALESCE(sqlc.narg('status'), status),
+ properties = CASE WHEN sqlc.arg('set_properties')::boolean THEN properties || COALESCE(sqlc.narg('properties')::jsonb, '{}'::jsonb) ELSE properties END,
+ updated_at = clock_timestamp()
 WHERE id = sqlc.arg('id') AND workspace_id = sqlc.arg('workspace_id')
  AND revision = sqlc.arg('expected_revision') RETURNING *;
 

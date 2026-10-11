@@ -4210,8 +4210,12 @@ export class ApiClient {
   }
 
   // Custom issue properties
-  async listProperties(includeArchived = false): Promise<ListPropertiesResponse> {
-    const suffix = includeArchived ? "?include_archived=true" : "";
+  async listProperties(includeArchived = false, resourceType: "issue" | "project" = "issue"): Promise<ListPropertiesResponse> {
+    const params = new URLSearchParams();
+    if (includeArchived) params.set("include_archived", "true");
+    if (resourceType !== "issue") params.set("resource_type", resourceType);
+    const query = params.toString();
+    const suffix = query ? `?${query}` : "";
     let raw: unknown;
     try {
       raw = await this.fetch<unknown>(`/api/properties${suffix}`);

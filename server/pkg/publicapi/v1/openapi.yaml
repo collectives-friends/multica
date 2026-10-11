@@ -117,6 +117,37 @@ paths:
               schema: {$ref: "#/components/schemas/Project"}
         default:
           $ref: "#/components/responses/Problem"
+  /plugin-project-properties:
+    put:
+      operationId: upsertPluginProjectProperty
+      summary: Upsert an integration-owned project property definition
+      description: >-
+        Requires plugin_integrations_v1, tc.projectproperties and a callback
+        credential attesting a workspace admin. Idempotently creates or
+        reconciles the installation's project-type property definition named
+        `name`, returning its definition and stable option IDs. Options are
+        matched by ID when provided and by name otherwise; removal of options
+        still referenced by projects is rejected.
+      x-multica-contract: plugin_extension
+      x-multica-scope: projects:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ProjectPropertyUpsert"}
+      responses:
+        "200":
+          description: Current integration-owned property definition
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PropertyDefinition"}
+        "201":
+          description: Created integration-owned property definition
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PropertyDefinition"}
+        default:
+          $ref: "#/components/responses/Problem"
   /context:
     get:
       operationId: getPluginContext
@@ -341,6 +372,7 @@ components:
         description: {type: [string, "null"]}
         status: {type: string, enum: [planned, in_progress, paused, completed, cancelled]}
         revision: {type: integer, format: int64, minimum: 1}
+        properties: {type: object, description: "Raw custom-property value bag keyed by property definition UUID"}
     ProjectMutation:
       type: object
       additionalProperties: false
@@ -351,6 +383,53 @@ components:
         title: {type: string, minLength: 1, maxLength: 1000}
         description: {type: [string, "null"]}
         status: {type: string, enum: [planned, in_progress, paused, completed, cancelled]}
+        properties: {type: object, description: "Property values keyed by definition UUID; only definitions owned by the installation"}
+    ProjectPropertyUpsert:
+      type: object
+      additionalProperties: false
+      required: [name, type, config]
+      properties:
+        name: {type: string, maxLength: 32}
+        type: {type: string, enum: [text, number, select, multi_select, date, checkbox, url, actor, multi_actor, multi_text, multi_url]}
+        description: {type: string, maxLength: 500}
+        icon: {type: string, maxLength: 32}
+        config:
+          type: object
+          required: [options]
+          properties:
+            options:
+              type: array
+              items:
+                type: object
+                required: [name, color]
+                properties:
+                  id: {type: string, format: uuid}
+                  name: {type: string, maxLength: 32}
+                  color: {type: string}
+    PropertyDefinition:
+      type: object
+      required: [id, workspace_id, name, type, config, resource_type]
+      properties:
+        id: {type: string, format: uuid}
+        workspace_id: {type: string, format: uuid}
+        name: {type: string}
+        type: {type: string}
+        description: {type: string}
+        icon: {type: string}
+        config:
+          type: object
+          properties:
+            options:
+              type: array
+              items:
+                type: object
+                required: [id, name, color]
+                properties:
+                  id: {type: string, format: uuid}
+                  name: {type: string}
+                  color: {type: string}
+        resource_type: {type: string, enum: [issue, project]}
+        owner_installation_id: {type: string, format: uuid}
     InstallationAuthorization:
       type: object
       required: [installation_id, workspace_id, enabled, credential_kind, actor, flags]

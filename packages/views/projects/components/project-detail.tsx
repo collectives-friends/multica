@@ -10,6 +10,8 @@ import { cn } from "@multica/ui/lib/utils";
 import { copyText } from "@multica/ui/lib/clipboard";
 import { toast } from "sonner";
 import type { ProjectStatus, ProjectPriority } from "@multica/core/types";
+import type { IssueProperty } from "@multica/core/types";
+import { propertyListOptions } from "@multica/core/properties";
 import { useAuthStore } from "@multica/core/auth";
 import { projectDetailOptions } from "@multica/core/projects/queries";
 import { useUpdateProject, useDeleteProject } from "@multica/core/projects/mutations";
@@ -95,6 +97,63 @@ function PropRow({
       </div>
     </div>
   );
+}
+
+// Read-only custom project properties (TCO-293). Integration-owned definitions
+// are written by their integration (Attio), never here, so this only renders
+// the current value beside the fixed project fields.
+function ProjectCustomProperties({
+  wsId,
+  values,
+}: {
+  wsId: string;
+  values: Record<string, unknown>;
+}) {
+  const { data: definitions = [] } = useQuery(propertyListOptions(wsId, true, "project"));
+  const shown = definitions.filter((def) => Object.prototype.hasOwnProperty.call(values, def.id));
+  if (shown.length === 0) return null;
+  return (
+    <>
+      {shown.map((def) => (
+        <PropRow key={def.id} label={def.name}>
+          <PropertyValue property={def} value={values[def.id]} />
+        </PropRow>
+      ))}
+    </>
+  );
+}
+
+function PropertyValue({ property, value }: { property: IssueProperty; value: unknown }) {
+  if (property.type === "select") {
+    const option = property.config.options?.find((o) => o.id === value);
+    return (
+      <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+        <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: option?.color ?? "#9ca3af" }} />
+        <span className="truncate">{option?.name ?? (value == null ? "" : String(value))}</span>
+      </span>
+    );
+  }
+  if (property.type === "multi_select") {
+    const ids = Array.isArray(value) ? value : [];
+    const options = (property.config.options ?? []).filter((o) => ids.includes(o.id));
+    return (
+      <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-muted-foreground">
+        {options.map((o) => (
+          <span key={o.id} className="inline-flex items-center gap-1">
+            <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: o.color }} />
+            {o.name}
+          </span>
+        ))}
+      </span>
+    );
+  }
+  if (property.type === "checkbox") {
+    return value ? <Check className="h-3.5 w-3.5 text-muted-foreground" /> : <span className="text-muted-foreground">—</span>;
+  }
+  if (Array.isArray(value)) {
+    return <span className="truncate text-muted-foreground">{value.map(String).join(", ")}</span>;
+  }
+  return <span className="truncate text-muted-foreground">{value == null ? "" : String(value)}</span>;
 }
 
 // ---------------------------------------------------------------------------
@@ -414,6 +473,9 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           <PropRow label={t(($) => $.detail.prop_due_date)}>
             <ProjectDueDatePicker dueDate={project.due_date} onUpdate={handleUpdateField} />
           </PropRow>
+          {project.properties && Object.keys(project.properties).length > 0 && (
+            <ProjectCustomProperties wsId={wsId} values={project.properties} />
+          )}
         </div>}
       </div>
 

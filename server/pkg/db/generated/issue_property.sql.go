@@ -13,11 +13,16 @@ import (
 
 const countActiveIssueProperties = `-- name: CountActiveIssueProperties :one
 SELECT COUNT(*) FROM issue_property
-WHERE workspace_id = $1 AND archived_at IS NULL
+WHERE workspace_id = $1 AND resource_type = $2 AND archived_at IS NULL
 `
 
-func (q *Queries) CountActiveIssueProperties(ctx context.Context, workspaceID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countActiveIssueProperties, workspaceID)
+type CountActiveIssuePropertiesParams struct {
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	ResourceType string      `json:"resource_type"`
+}
+
+func (q *Queries) CountActiveIssueProperties(ctx context.Context, arg CountActiveIssuePropertiesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveIssueProperties, arg.WorkspaceID, arg.ResourceType)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -67,28 +72,77 @@ func (q *Queries) CountIssuesUsingPropertyOptions(ctx context.Context, arg Count
 	return items, nil
 }
 
+const countProjectsUsingPropertyOptions = `-- name: CountProjectsUsingPropertyOptions :many
+SELECT opt::text AS option_id, COUNT(pr.id) AS usage_count
+FROM unnest($1::text[]) AS opt
+LEFT JOIN project pr
+  ON pr.workspace_id = $2::uuid
+ AND (pr.properties -> $3::text) ? opt
+GROUP BY opt
+HAVING COUNT(pr.id) > 0
+`
+
+type CountProjectsUsingPropertyOptionsParams struct {
+	OptionIds   []string    `json:"option_ids"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	PropertyKey string      `json:"property_key"`
+}
+
+type CountProjectsUsingPropertyOptionsRow struct {
+	OptionID   string `json:"option_id"`
+	UsageCount int64  `json:"usage_count"`
+}
+
+// Project-side counterpart of CountIssuesUsingPropertyOptions for
+// resource_type = 'project' definitions.
+func (q *Queries) CountProjectsUsingPropertyOptions(ctx context.Context, arg CountProjectsUsingPropertyOptionsParams) ([]CountProjectsUsingPropertyOptionsRow, error) {
+	rows, err := q.db.Query(ctx, countProjectsUsingPropertyOptions, arg.OptionIds, arg.WorkspaceID, arg.PropertyKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountProjectsUsingPropertyOptionsRow{}
+	for rows.Next() {
+		var i CountProjectsUsingPropertyOptionsRow
+		if err := rows.Scan(&i.OptionID, &i.UsageCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createIssueProperty = `-- name: CreateIssueProperty :one
-INSERT INTO issue_property (workspace_id, name, type, description, icon, config, position)
+INSERT INTO issue_property (workspace_id, name, type, description, icon, config, position, resource_type, owner_installation_id)
 SELECT $1::uuid,
        $2::text,
        $3::text,
        $4::text,
        $5::text,
        $6::jsonb,
-       COALESCE((SELECT MAX(position) FROM issue_property WHERE workspace_id = $1::uuid), 0) + 1
-RETURNING id, workspace_id, name, type, description, config, position, archived_at, created_at, updated_at, icon
+       COALESCE((SELECT MAX(position) FROM issue_property WHERE workspace_id = $1::uuid AND resource_type = $7::text), 0) + 1,
+       $7::text,
+       $8::uuid
+RETURNING id, workspace_id, name, type, description, config, position, archived_at, created_at, updated_at, icon, resource_type, owner_installation_id
 `
 
 type CreateIssuePropertyParams struct {
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-	Name        string      `json:"name"`
-	Type        string      `json:"type"`
-	Description string      `json:"description"`
-	Icon        string      `json:"icon"`
-	Config      []byte      `json:"config"`
+	WorkspaceID         pgtype.UUID `json:"workspace_id"`
+	Name                string      `json:"name"`
+	Type                string      `json:"type"`
+	Description         string      `json:"description"`
+	Icon                string      `json:"icon"`
+	Config              []byte      `json:"config"`
+	ResourceType        string      `json:"resource_type"`
+	OwnerInstallationID pgtype.UUID `json:"owner_installation_id"`
 }
 
-// New definitions append to the end of the catalog: position = max + 1.
+// New definitions append to the end of their resource type's catalog:
+// position = max + 1. owner_installation_id is only set by the plugin
+// capability, never by the human editor.
 func (q *Queries) CreateIssueProperty(ctx context.Context, arg CreateIssuePropertyParams) (IssueProperty, error) {
 	row := q.db.QueryRow(ctx, createIssueProperty,
 		arg.WorkspaceID,
@@ -97,6 +151,8 @@ func (q *Queries) CreateIssueProperty(ctx context.Context, arg CreateIssueProper
 		arg.Description,
 		arg.Icon,
 		arg.Config,
+		arg.ResourceType,
+		arg.OwnerInstallationID,
 	)
 	var i IssueProperty
 	err := row.Scan(
@@ -111,6 +167,8 @@ func (q *Queries) CreateIssueProperty(ctx context.Context, arg CreateIssueProper
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Icon,
+		&i.ResourceType,
+		&i.OwnerInstallationID,
 	)
 	return i, err
 }
@@ -174,7 +232,7 @@ func (q *Queries) DeleteIssuePropertyValue(ctx context.Context, arg DeleteIssueP
 }
 
 const getIssueProperty = `-- name: GetIssueProperty :one
-SELECT id, workspace_id, name, type, description, config, position, archived_at, created_at, updated_at, icon FROM issue_property
+SELECT id, workspace_id, name, type, description, config, position, archived_at, created_at, updated_at, icon, resource_type, owner_installation_id FROM issue_property
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -198,48 +256,97 @@ func (q *Queries) GetIssueProperty(ctx context.Context, arg GetIssuePropertyPara
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Icon,
+		&i.ResourceType,
+		&i.OwnerInstallationID,
+	)
+	return i, err
+}
+
+const getOwnedProjectPropertyByName = `-- name: GetOwnedProjectPropertyByName :one
+SELECT id, workspace_id, name, type, description, config, position, archived_at, created_at, updated_at, icon, resource_type, owner_installation_id FROM issue_property
+WHERE workspace_id = $1 AND resource_type = 'project'
+  AND owner_installation_id = $2 AND LOWER(name) = LOWER($3::text)
+`
+
+type GetOwnedProjectPropertyByNameParams struct {
+	WorkspaceID         pgtype.UUID `json:"workspace_id"`
+	OwnerInstallationID pgtype.UUID `json:"owner_installation_id"`
+	Name                string      `json:"name"`
+}
+
+// Plugin capability lookup: the installation's project-type definition with
+// this name. Uniqueness per (workspace, resource_type, name) makes this
+// deterministic without a separate key column.
+func (q *Queries) GetOwnedProjectPropertyByName(ctx context.Context, arg GetOwnedProjectPropertyByNameParams) (IssueProperty, error) {
+	row := q.db.QueryRow(ctx, getOwnedProjectPropertyByName, arg.WorkspaceID, arg.OwnerInstallationID, arg.Name)
+	var i IssueProperty
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Name,
+		&i.Type,
+		&i.Description,
+		&i.Config,
+		&i.Position,
+		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Icon,
+		&i.ResourceType,
+		&i.OwnerInstallationID,
 	)
 	return i, err
 }
 
 const listIssueProperties = `-- name: ListIssueProperties :many
-SELECT p.id, p.workspace_id, p.name, p.type, p.description, p.config, p.position, p.archived_at, p.created_at, p.updated_at, p.icon,
+SELECT p.id, p.workspace_id, p.name, p.type, p.description, p.config, p.position, p.archived_at, p.created_at, p.updated_at, p.icon, p.resource_type, p.owner_installation_id,
     (
-        SELECT COUNT(*) FROM issue i
-        WHERE i.workspace_id = p.workspace_id
-          AND i.properties ? p.id::text
+        CASE WHEN p.resource_type = 'project' THEN
+            (SELECT COUNT(*) FROM project pr
+             WHERE pr.workspace_id = p.workspace_id
+               AND pr.properties ? p.id::text)
+        ELSE
+            (SELECT COUNT(*) FROM issue i
+             WHERE i.workspace_id = p.workspace_id
+               AND i.properties ? p.id::text)
+        END
     )::bigint AS usage_count
 FROM issue_property p
 WHERE p.workspace_id = $1::uuid
-  AND ($2::bool OR p.archived_at IS NULL)
+  AND p.resource_type = $2::text
+  AND ($3::bool OR p.archived_at IS NULL)
 ORDER BY p.position ASC, LOWER(p.name) ASC
 `
 
 type ListIssuePropertiesParams struct {
 	WorkspaceID     pgtype.UUID `json:"workspace_id"`
+	ResourceType    string      `json:"resource_type"`
 	IncludeArchived bool        `json:"include_archived"`
 }
 
 type ListIssuePropertiesRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	Name        string             `json:"name"`
-	Type        string             `json:"type"`
-	Description string             `json:"description"`
-	Config      []byte             `json:"config"`
-	Position    float64            `json:"position"`
-	ArchivedAt  pgtype.Timestamptz `json:"archived_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	Icon        string             `json:"icon"`
-	UsageCount  int64              `json:"usage_count"`
+	ID                  pgtype.UUID        `json:"id"`
+	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
+	Name                string             `json:"name"`
+	Type                string             `json:"type"`
+	Description         string             `json:"description"`
+	Config              []byte             `json:"config"`
+	Position            float64            `json:"position"`
+	ArchivedAt          pgtype.Timestamptz `json:"archived_at"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	Icon                string             `json:"icon"`
+	ResourceType        string             `json:"resource_type"`
+	OwnerInstallationID pgtype.UUID        `json:"owner_installation_id"`
+	UsageCount          int64              `json:"usage_count"`
 }
 
-// usage_count = number of issues in the workspace that currently carry a
-// value for this property. `properties ? id` is a seq scan today; fine at
-// the 20-definition / small-workspace scale this feature targets.
+// usage_count = number of resources in the workspace that currently carry a
+// value for this property, counted on the table its resource_type targets.
+// `properties ? id` is a seq scan today; fine at the 20-definition /
+// small-workspace scale this feature targets.
 func (q *Queries) ListIssueProperties(ctx context.Context, arg ListIssuePropertiesParams) ([]ListIssuePropertiesRow, error) {
-	rows, err := q.db.Query(ctx, listIssueProperties, arg.WorkspaceID, arg.IncludeArchived)
+	rows, err := q.db.Query(ctx, listIssueProperties, arg.WorkspaceID, arg.ResourceType, arg.IncludeArchived)
 	if err != nil {
 		return nil, err
 	}
@@ -259,6 +366,8 @@ func (q *Queries) ListIssueProperties(ctx context.Context, arg ListIssueProperti
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Icon,
+			&i.ResourceType,
+			&i.OwnerInstallationID,
 			&i.UsageCount,
 		); err != nil {
 			return nil, err
@@ -347,7 +456,7 @@ UPDATE issue_property SET
     archived_at = CASE WHEN $7::bool THEN $8 ELSE archived_at END,
     updated_at = now()
 WHERE id = $1 AND workspace_id = $2
-RETURNING id, workspace_id, name, type, description, config, position, archived_at, created_at, updated_at, icon
+RETURNING id, workspace_id, name, type, description, config, position, archived_at, created_at, updated_at, icon, resource_type, owner_installation_id
 `
 
 type UpdateIssuePropertyParams struct {
@@ -388,6 +497,8 @@ func (q *Queries) UpdateIssueProperty(ctx context.Context, arg UpdateIssueProper
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Icon,
+		&i.ResourceType,
+		&i.OwnerInstallationID,
 	)
 	return i, err
 }

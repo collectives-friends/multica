@@ -21,6 +21,8 @@ export interface Project {
   issue_count: number;
   done_count: number;
   resource_count: number;
+  /** Custom project-property value bag keyed by property definition id (TCO-293). */
+  properties?: Record<string, unknown>;
 }
 
 export interface CreateProjectRequest {
