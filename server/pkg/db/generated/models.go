@@ -888,17 +888,19 @@ type IssuePrAutomation struct {
 }
 
 type IssueProperty struct {
-	ID          pgtype.UUID        `json:"id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	Name        string             `json:"name"`
-	Type        string             `json:"type"`
-	Description string             `json:"description"`
-	Config      []byte             `json:"config"`
-	Position    float64            `json:"position"`
-	ArchivedAt  pgtype.Timestamptz `json:"archived_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	Icon        string             `json:"icon"`
+	ID                  pgtype.UUID        `json:"id"`
+	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
+	Name                string             `json:"name"`
+	Type                string             `json:"type"`
+	Description         string             `json:"description"`
+	Config              []byte             `json:"config"`
+	Position            float64            `json:"position"`
+	ArchivedAt          pgtype.Timestamptz `json:"archived_at"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	Icon                string             `json:"icon"`
+	ResourceType        string             `json:"resource_type"`
+	OwnerInstallationID pgtype.UUID        `json:"owner_installation_id"`
 }
 
 type IssuePullRequest struct {
@@ -1341,6 +1343,7 @@ type Project struct {
 	StartDate   pgtype.Date        `json:"start_date"`
 	DueDate     pgtype.Date        `json:"due_date"`
 	Revision    int64              `json:"revision"`
+	Properties  []byte             `json:"properties"`
 }
 
 type ProjectResource struct {

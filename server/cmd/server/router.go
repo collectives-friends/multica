@@ -107,6 +107,7 @@ func registerPluginActionRoutes(r chi.Router, h *handler.Handler) {
 	r.Post(publicapiv1.PathProjects, h.CreatePluginProject)
 	r.Get(publicapiv1.PathProject, h.GetPluginProject)
 	r.Patch(publicapiv1.PathProject, h.PatchPluginProject)
+	r.Put(publicapiv1.PathPluginProjectProperties, h.UpsertPluginProjectProperty)
 	r.Get(publicapiv1.PathContext, h.GetPluginContext)
 	r.Get(publicapiv1.PathIssue, h.GetPluginIssue)
 	r.Patch(publicapiv1.PathIssue, h.PatchPluginIssue)

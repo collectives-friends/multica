@@ -1,15 +1,23 @@
 -- name: ListIssueProperties :many
--- usage_count = number of issues in the workspace that currently carry a
--- value for this property. `properties ? id` is a seq scan today; fine at
--- the 20-definition / small-workspace scale this feature targets.
+-- usage_count = number of resources in the workspace that currently carry a
+-- value for this property, counted on the table its resource_type targets.
+-- `properties ? id` is a seq scan today; fine at the 20-definition /
+-- small-workspace scale this feature targets.
 SELECT p.*,
     (
-        SELECT COUNT(*) FROM issue i
-        WHERE i.workspace_id = p.workspace_id
-          AND i.properties ? p.id::text
+        CASE WHEN p.resource_type = 'project' THEN
+            (SELECT COUNT(*) FROM project pr
+             WHERE pr.workspace_id = p.workspace_id
+               AND pr.properties ? p.id::text)
+        ELSE
+            (SELECT COUNT(*) FROM issue i
+             WHERE i.workspace_id = p.workspace_id
+               AND i.properties ? p.id::text)
+        END
     )::bigint AS usage_count
 FROM issue_property p
 WHERE p.workspace_id = sqlc.arg('workspace_id')::uuid
+  AND p.resource_type = sqlc.arg('resource_type')::text
   AND (sqlc.arg('include_archived')::bool OR p.archived_at IS NULL)
 ORDER BY p.position ASC, LOWER(p.name) ASC;
 
@@ -17,20 +25,32 @@ ORDER BY p.position ASC, LOWER(p.name) ASC;
 SELECT * FROM issue_property
 WHERE id = $1 AND workspace_id = $2;
 
+-- name: GetOwnedProjectPropertyByName :one
+-- Plugin capability lookup: the installation's project-type definition with
+-- this name. Uniqueness per (workspace, resource_type, name) makes this
+-- deterministic without a separate key column.
+SELECT * FROM issue_property
+WHERE workspace_id = $1 AND resource_type = 'project'
+  AND owner_installation_id = $2 AND LOWER(name) = LOWER(sqlc.arg('name')::text);
+
 -- name: CountActiveIssueProperties :one
 SELECT COUNT(*) FROM issue_property
-WHERE workspace_id = $1 AND archived_at IS NULL;
+WHERE workspace_id = $1 AND resource_type = $2 AND archived_at IS NULL;
 
 -- name: CreateIssueProperty :one
--- New definitions append to the end of the catalog: position = max + 1.
-INSERT INTO issue_property (workspace_id, name, type, description, icon, config, position)
+-- New definitions append to the end of their resource type's catalog:
+-- position = max + 1. owner_installation_id is only set by the plugin
+-- capability, never by the human editor.
+INSERT INTO issue_property (workspace_id, name, type, description, icon, config, position, resource_type, owner_installation_id)
 SELECT sqlc.arg('workspace_id')::uuid,
        sqlc.arg('name')::text,
        sqlc.arg('type')::text,
        sqlc.arg('description')::text,
        sqlc.arg('icon')::text,
        sqlc.arg('config')::jsonb,
-       COALESCE((SELECT MAX(position) FROM issue_property WHERE workspace_id = sqlc.arg('workspace_id')::uuid), 0) + 1
+       COALESCE((SELECT MAX(position) FROM issue_property WHERE workspace_id = sqlc.arg('workspace_id')::uuid AND resource_type = sqlc.arg('resource_type')::text), 0) + 1,
+       sqlc.arg('resource_type')::text,
+       sqlc.narg('owner_installation_id')::uuid
 RETURNING *;
 
 -- name: UpdateIssueProperty :one
@@ -87,3 +107,14 @@ LEFT JOIN issue i
  AND (i.properties -> sqlc.arg('property_key')::text) ? opt
 GROUP BY opt
 HAVING COUNT(i.id) > 0;
+
+-- name: CountProjectsUsingPropertyOptions :many
+-- Project-side counterpart of CountIssuesUsingPropertyOptions for
+-- resource_type = 'project' definitions.
+SELECT opt::text AS option_id, COUNT(pr.id) AS usage_count
+FROM unnest(sqlc.arg('option_ids')::text[]) AS opt
+LEFT JOIN project pr
+  ON pr.workspace_id = sqlc.arg('workspace_id')::uuid
+ AND (pr.properties -> sqlc.arg('property_key')::text) ? opt
+GROUP BY opt
+HAVING COUNT(pr.id) > 0;

@@ -44,6 +44,10 @@ type ProjectResponse struct {
 	// payload to keep parent metadata and child collections separate; clients
 	// that need the list call ListProjectResources directly.
 	ResourceCount int64 `json:"resource_count"`
+	// Properties is the raw custom-property value bag keyed by definition
+	// UUID (TCO-293). Clients resolve display values through the property
+	// definitions listed at /api/properties?resource_type=project.
+	Properties json.RawMessage `json:"properties"`
 }
 
 func projectToResponse(p db.Project) ProjectResponse {
@@ -61,7 +65,17 @@ func projectToResponse(p db.Project) ProjectResponse {
 		DueDate:     dateToPtr(p.DueDate),
 		CreatedAt:   timestampToString(p.CreatedAt),
 		UpdatedAt:   timestampToString(p.UpdatedAt),
+		Properties:  projectPropertiesJSON(p.Properties),
 	}
+}
+
+// projectPropertiesJSON renders the stored bag without leaking invalid bytes:
+// an empty or unparsable bag degrades to {} instead of failing the payload.
+func projectPropertiesJSON(raw []byte) json.RawMessage {
+	if len(raw) == 0 {
+		return json.RawMessage(`{}`)
+	}
+	return json.RawMessage(raw)
 }
 
 func (h *Handler) loadProjectIssueStats(ctx context.Context, workspaceID, projectID pgtype.UUID) (int64, int64) {

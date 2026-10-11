@@ -24,8 +24,8 @@ func (q *Queries) CountIssuesByProject(ctx context.Context, projectID pgtype.UUI
 }
 
 const createPluginProject = `-- name: CreatePluginProject :one
-INSERT INTO project (id, workspace_id, title, description, status)
-VALUES ($1, $2, $3, $4, $5) RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, revision
+INSERT INTO project (id, workspace_id, title, description, status, properties)
+VALUES ($1, $2, $3, $4, $5, COALESCE($6::jsonb, '{}'::jsonb)) RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, revision, properties
 `
 
 type CreatePluginProjectParams struct {
@@ -34,6 +34,7 @@ type CreatePluginProjectParams struct {
 	Title       string      `json:"title"`
 	Description pgtype.Text `json:"description"`
 	Status      string      `json:"status"`
+	Properties  []byte      `json:"properties"`
 }
 
 func (q *Queries) CreatePluginProject(ctx context.Context, arg CreatePluginProjectParams) (Project, error) {
@@ -43,6 +44,7 @@ func (q *Queries) CreatePluginProject(ctx context.Context, arg CreatePluginProje
 		arg.Title,
 		arg.Description,
 		arg.Status,
+		arg.Properties,
 	)
 	var i Project
 	err := row.Scan(
@@ -60,6 +62,7 @@ func (q *Queries) CreatePluginProject(ctx context.Context, arg CreatePluginProje
 		&i.StartDate,
 		&i.DueDate,
 		&i.Revision,
+		&i.Properties,
 	)
 	return i, err
 }
@@ -70,7 +73,7 @@ INSERT INTO project (
     lead_type, lead_id, priority, start_date, due_date
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
-) RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, revision
+) RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, revision, properties
 `
 
 type CreateProjectParams struct {
@@ -115,6 +118,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.StartDate,
 		&i.DueDate,
 		&i.Revision,
+		&i.Properties,
 	)
 	return i, err
 }
@@ -156,7 +160,7 @@ func (q *Queries) GetPluginProjectOperation(ctx context.Context, arg GetPluginPr
 }
 
 const getProjectInWorkspace = `-- name: GetProjectInWorkspace :one
-SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, revision FROM project
+SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, revision, properties FROM project
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -183,6 +187,7 @@ func (q *Queries) GetProjectInWorkspace(ctx context.Context, arg GetProjectInWor
 		&i.StartDate,
 		&i.DueDate,
 		&i.Revision,
+		&i.Properties,
 	)
 	return i, err
 }
@@ -251,7 +256,7 @@ func (q *Queries) InsertPluginProjectOperation(ctx context.Context, arg InsertPl
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, revision FROM project
+SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, revision, properties FROM project
 WHERE workspace_id = $1
   AND ($2::text IS NULL OR status = $2)
   AND ($3::text IS NULL OR priority = $3)
@@ -288,6 +293,7 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]P
 			&i.StartDate,
 			&i.DueDate,
 			&i.Revision,
+			&i.Properties,
 		); err != nil {
 			return nil, err
 		}
@@ -353,9 +359,11 @@ func (q *Queries) LockProjectForDelete(ctx context.Context, arg LockProjectForDe
 const patchPluginProject = `-- name: PatchPluginProject :one
 UPDATE project SET title = COALESCE($1, title),
  description = CASE WHEN $2::boolean THEN $3::text ELSE description END,
- status = COALESCE($4, status), updated_at = clock_timestamp()
-WHERE id = $5 AND workspace_id = $6
- AND revision = $7 RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, revision
+ status = COALESCE($4, status),
+ properties = CASE WHEN $5::boolean THEN properties || COALESCE($6::jsonb, '{}'::jsonb) ELSE properties END,
+ updated_at = clock_timestamp()
+WHERE id = $7 AND workspace_id = $8
+ AND revision = $9 RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, revision, properties
 `
 
 type PatchPluginProjectParams struct {
@@ -363,6 +371,8 @@ type PatchPluginProjectParams struct {
 	SetDescription   bool        `json:"set_description"`
 	Description      pgtype.Text `json:"description"`
 	Status           pgtype.Text `json:"status"`
+	SetProperties    bool        `json:"set_properties"`
+	Properties       []byte      `json:"properties"`
 	ID               pgtype.UUID `json:"id"`
 	WorkspaceID      pgtype.UUID `json:"workspace_id"`
 	ExpectedRevision int64       `json:"expected_revision"`
@@ -374,6 +384,8 @@ func (q *Queries) PatchPluginProject(ctx context.Context, arg PatchPluginProject
 		arg.SetDescription,
 		arg.Description,
 		arg.Status,
+		arg.SetProperties,
+		arg.Properties,
 		arg.ID,
 		arg.WorkspaceID,
 		arg.ExpectedRevision,
@@ -394,6 +406,7 @@ func (q *Queries) PatchPluginProject(ctx context.Context, arg PatchPluginProject
 		&i.StartDate,
 		&i.DueDate,
 		&i.Revision,
+		&i.Properties,
 	)
 	return i, err
 }
@@ -411,7 +424,7 @@ UPDATE project SET
     due_date = $10,
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, revision
+RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, revision, properties
 `
 
 type UpdateProjectParams struct {
@@ -456,6 +469,7 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.StartDate,
 		&i.DueDate,
 		&i.Revision,
+		&i.Properties,
 	)
 	return i, err
 }
