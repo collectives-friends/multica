@@ -21,6 +21,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/dbreader"
 	"github.com/multica-ai/multica/server/internal/dbstartup"
 	"github.com/multica-ai/multica/server/internal/events"
+	"github.com/multica-ai/multica/server/internal/featureflags"
 	"github.com/multica-ai/multica/server/internal/handler"
 	"github.com/multica-ai/multica/server/internal/integrations/wecom"
 	"github.com/multica-ai/multica/server/internal/logger"
@@ -375,6 +376,10 @@ func main() {
 		os.Exit(1)
 	}
 	_ = flags // adopted by the router (opts.FeatureFlags) and server-side toggle points; see server/pkg/featureflag
+	if _, err := featureflags.LoadHostRegistry(); err != nil {
+		slog.Error("refusing to start: invalid workspace feature flag definitions", "error", err)
+		os.Exit(1)
+	}
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {

@@ -1,8 +1,16 @@
 package featureflags
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/multica-ai/multica/server/pkg/featureflag"
+	"io"
+	"os"
+	"regexp"
 	"sort"
+	"strings"
+	"sync"
 )
 
 const (
@@ -99,9 +107,17 @@ func (r *Registry) PublicKeys() map[string]bool {
 	return out
 }
 
-func HostRegistry() *Registry {
+// DefinitionsEnv names a JSON array of extra host definitions declared by the
+// deployment. It is read once per process; main validates it before serving.
+const DefinitionsEnv = "MULTICA_FEATURE_FLAG_DEFINITIONS"
+
+const maxDeploymentDefinitions = 64
+
+var deploymentKeyPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,99}$`)
+
+func builtinDefinitions() []Definition {
 	yes := true
-	r, err := NewRegistry([]Definition{
+	return []Definition{
 		{Key: BillingWorkspaceSubscriptions, Label: "Workspace subscriptions", Description: "Workspace billing and subscription management.", Group: "Workspace", Public: true},
 		{Key: ComposioMCPApps, Label: "Connected apps", Description: "Manage Composio apps and their agent access.", Group: "Integrations", Public: true},
 		{Key: PluginsV1, Label: "Plugins", Description: "Install and run workspace plugins.", Group: "Integrations", Public: true},
@@ -110,7 +126,96 @@ func HostRegistry() *Registry {
 		{Key: agentBuilderCompat, Label: "Agent builder", Group: "Compatibility", Default: true, Frozen: &yes, Public: true},
 		{Key: agentSkillTogglesCompat, Label: "Agent skill toggles", Group: "Compatibility", Default: true, Frozen: &yes, Public: true},
 		{Key: resourceLabelsCompat, Label: "Resource labels", Group: "Compatibility", Default: true, Frozen: &yes, Public: true},
-	})
+	}
+}
+
+// ParseDefinitions validates deployment-declared definitions. They are plain
+// workspace flags: no parent, frozen value, public exposure or plugin owner.
+// The key pattern excludes ':' so they never collide with plugin keys.
+func ParseDefinitions(raw string) ([]Definition, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var input []struct {
+		Key         string `json:"key"`
+		Label       string `json:"label"`
+		Description string `json:"description"`
+		Group       string `json:"group"`
+		Default     bool   `json:"default"`
+		ScopePolicy string `json:"scope_policy"`
+	}
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		return nil, fmt.Errorf("decode: %w", err)
+	}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		return nil, errors.New("decode: unexpected data after the JSON array")
+	}
+	if len(input) > maxDeploymentDefinitions {
+		return nil, fmt.Errorf("at most %d definitions are allowed, got %d", maxDeploymentDefinitions, len(input))
+	}
+	builtin := map[string]bool{}
+	// FF_<KEY> deployment overrides normalize keys; an alias would share one override.
+	envNames := map[string]string{}
+	for _, d := range builtinDefinitions() {
+		builtin[d.Key] = true
+		envNames[featureflag.EnvName(d.Key)] = d.Key
+	}
+	seen := map[string]bool{}
+	defs := make([]Definition, 0, len(input))
+	for i, in := range input {
+		switch {
+		case !deploymentKeyPattern.MatchString(in.Key):
+			return nil, fmt.Errorf("definition %d: key %q must match %s", i, in.Key, deploymentKeyPattern)
+		case builtin[in.Key]:
+			return nil, fmt.Errorf("definition %d: key %q is a built-in host flag", i, in.Key)
+		case seen[in.Key]:
+			return nil, fmt.Errorf("definition %d: duplicate key %q", i, in.Key)
+		case in.Key == "audit":
+			return nil, fmt.Errorf("definition %d: key %q is reserved by the feature-flag API", i, in.Key)
+		case envNames[featureflag.EnvName(in.Key)] != "":
+			return nil, fmt.Errorf("definition %d: key %q shares deployment override FF_%s with %q", i, in.Key, featureflag.EnvName(in.Key), envNames[featureflag.EnvName(in.Key)])
+		case strings.TrimSpace(in.Label) == "":
+			return nil, fmt.Errorf("definition %d: label is required for %q", i, in.Key)
+		}
+		seen[in.Key] = true
+		envNames[featureflag.EnvName(in.Key)] = in.Key
+		if in.ScopePolicy == "" {
+			in.ScopePolicy = WorkspaceOnly
+		}
+		if in.ScopePolicy != WorkspaceOnly && in.ScopePolicy != MemberOverridable {
+			return nil, fmt.Errorf("definition %d: scope_policy for %q must be %s or %s", i, in.Key, WorkspaceOnly, MemberOverridable)
+		}
+		if in.Group == "" {
+			in.Group = "Other"
+		}
+		defs = append(defs, Definition{Key: in.Key, Label: in.Label, Description: in.Description, Group: in.Group, Default: in.Default, ScopePolicy: in.ScopePolicy})
+	}
+	return defs, nil
+}
+
+// HostRegistryWith returns the built-in host registry plus extra definitions.
+func HostRegistryWith(extra []Definition) (*Registry, error) {
+	return NewRegistry(append(builtinDefinitions(), extra...))
+}
+
+var hostRegistry = sync.OnceValues(func() (*Registry, error) {
+	extra, err := ParseDefinitions(os.Getenv(DefinitionsEnv))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", DefinitionsEnv, err)
+	}
+	return HostRegistryWith(extra)
+})
+
+// LoadHostRegistry reports invalid deployment definitions so startup can fail
+// before the first request reaches HostRegistry.
+func LoadHostRegistry() (*Registry, error) { return hostRegistry() }
+
+// HostRegistry is immutable and shared; callers copy Definitions before
+// extending it.
+func HostRegistry() *Registry {
+	r, err := hostRegistry()
 	if err != nil {
 		panic(err)
 	}

@@ -134,6 +134,10 @@ func (p *EnvProvider) Lookup(ctx context.Context, key string) (Decision, bool) {
 // and "checkout-new-payment" route to the same env name; if you need
 // distinct env vars for variants of the same key, choose distinct flag
 // keys instead.
+// EnvName returns the environment variable suffix EnvProvider reads for key.
+// Keys that map to the same name share one deployment override.
+func EnvName(key string) string { return flagKeyToEnv(key) }
+
 func flagKeyToEnv(key string) string {
 	var b strings.Builder
 	b.Grow(len(key))

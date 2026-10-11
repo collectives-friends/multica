@@ -224,3 +224,42 @@ func TestFeatureFlagMemberAndWorkspaceCleanup(t *testing.T) {
 		t.Fatalf("workspace cleanup left flag data: %d/%d", overrides, audits)
 	}
 }
+
+func TestDeploymentDeclaredFlagEndToEnd(t *testing.T) {
+	testWorkspaceID := dbfx.Workspace(t, "Deployment flags", "deployment-flags")
+	dbfx.Member(t, testWorkspaceID, testUserID, "owner")
+	dbfx.Cleanup(t, "DELETE FROM workspace_feature_flag_override WHERE workspace_id=$1", testWorkspaceID)
+	dbfx.Cleanup(t, "DELETE FROM workspace_feature_flag_audit WHERE workspace_id=$1", testWorkspaceID)
+	extra, err := featureflags.ParseDefinitions(`[{"key":"acme.reports","label":"Reports","group":"Acme"}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := featureflags.HostRegistryWith(extra)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := testHandler.FlagResolver
+	testHandler.FlagResolver = featureflags.NewResolver(registry, nil, featureflags.DBSource{Queries: testHandler.Queries})
+	t.Cleanup(func() { testHandler.FlagResolver = old })
+	request := func(method, key, body string) *http.Request {
+		return pluginHandlerRequest(method, "/", []byte(body), map[string]string{"id": testWorkspaceID, "key": key})
+	}
+	var view featureflags.View
+	testutil.Call(t, testHandler.GetFeatureFlags, request("GET", "", "")).Want(200).JSON(&view)
+	found := false
+	for _, d := range view.Definitions {
+		found = found || (d.Key == "acme.reports" && d.Label == "Reports" && d.Group == "Acme")
+	}
+	if !found {
+		t.Fatalf("deployment definition missing: %+v", view.Definitions)
+	}
+	if d := view.Resolved["acme.reports"]; d.Value || d.Source != "default" {
+		t.Fatalf("default resolution: %+v", d)
+	}
+	testutil.Call(t, testHandler.SetWorkspaceFeatureFlag, request("PUT", "acme.reports", `{"enabled":true}`)).Want(200)
+	testutil.Call(t, testHandler.GetFeatureFlags, request("GET", "", "")).Want(200).JSON(&view)
+	if d := view.Resolved["acme.reports"]; !d.Value || d.Source != "workspace" {
+		t.Fatalf("workspace override: %+v", d)
+	}
+	testutil.Call(t, testHandler.SetMemberFeatureFlag, request("PUT", "acme.reports", `{"enabled":false}`)).Want(409)
+}
