@@ -60,6 +60,7 @@ const (
 var frontendPublicFlags = []string{
 	BillingWorkspaceSubscriptions,
 	ComposioMCPApps,
+	ConnectionsV1,
 	PluginsV1,
 }
 
