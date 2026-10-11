@@ -140,7 +140,8 @@ is `host:plugin_integrations_v1`, and gate each surface and hook on it.
 
 The SDK exposes `multica.projects.list()`, `.get(id)`, `.create(input)` and
 `.update(id, input)`. Writes support title, nullable description and project
-status only. Each write requires a fresh UUID `operation_id`; updates also require
+status only. Each write requires a fresh UUID `operation_id`; creation uses that UUID as the
+project ID so lost responses can be read back without name matching. Updates also require
 `expected_revision` from the last read. The server commits a receipt and mutation
 in one transaction. Retrying the exact operation returns its original response;
 reusing an operation ID with another payload returns 409. Native project edits

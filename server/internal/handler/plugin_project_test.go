@@ -57,6 +57,9 @@ func TestPluginProjectGateScopesAndOperationReplay(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &project); err != nil {
 		t.Fatal(err)
 	}
+	if project.ID != body["operation_id"] {
+		t.Fatalf("create readback identity %s differs from operation", project.ID)
+	}
 	t.Cleanup(func() {
 		testHandler.Queries.DeleteProject(context.Background(), db.DeleteProjectParams{ID: parseUUID(project.ID), WorkspaceID: parseUUID(testWorkspaceID)})
 	})
@@ -214,7 +217,7 @@ func TestPluginProjectsRejectCrossWorkspaceAndDisabledDirectCalls(t *testing.T) 
 	id, token, provider := integrationPlugin(t)
 	provider.Set(featureflags.PluginIntegrationsV1, featureflag.Rule{Default: true})
 	foreign := dbfx.Workspace(t, "Foreign project workspace", "project-"+uuid.NewString())
-	p, err := testHandler.Queries.CreatePluginProject(context.Background(), db.CreatePluginProjectParams{WorkspaceID: parseUUID(foreign), Title: "Private foreign project", Status: "planned"})
+	p, err := testHandler.Queries.CreatePluginProject(context.Background(), db.CreatePluginProjectParams{ID: parseUUID(uuid.NewString()), WorkspaceID: parseUUID(foreign), Title: "Private foreign project", Status: "planned"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,6 +232,11 @@ func TestPluginProjectsRejectCrossWorkspaceAndDisabledDirectCalls(t *testing.T) 
 	testHandler.PatchPluginProject(patch, projectRequest(token, map[string]any{"operation_id": uuid.NewString(), "expected_revision": p.Revision, "title": "cross tenant"}, uuidToString(p.ID)))
 	if patch.Code != 409 {
 		t.Fatalf("foreign patch=%d", patch.Code)
+	}
+	collision := httptest.NewRecorder()
+	testHandler.CreatePluginProject(collision, projectRequest(token, map[string]any{"operation_id": uuidToString(p.ID), "title": "Must not rebind"}, ""))
+	if collision.Code != 409 {
+		t.Fatalf("foreign identity collision=%d", collision.Code)
 	}
 	_, err = testHandler.DB.Exec(context.Background(), "UPDATE plugin_installation SET enabled=false WHERE id=$1", id)
 	if err != nil {

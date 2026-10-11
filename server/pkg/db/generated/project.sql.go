@@ -24,11 +24,12 @@ func (q *Queries) CountIssuesByProject(ctx context.Context, projectID pgtype.UUI
 }
 
 const createPluginProject = `-- name: CreatePluginProject :one
-INSERT INTO project (workspace_id, title, description, status)
-VALUES ($1, $2, $3, $4) RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, revision
+INSERT INTO project (id, workspace_id, title, description, status)
+VALUES ($1, $2, $3, $4, $5) RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, revision
 `
 
 type CreatePluginProjectParams struct {
+	ID          pgtype.UUID `json:"id"`
 	WorkspaceID pgtype.UUID `json:"workspace_id"`
 	Title       string      `json:"title"`
 	Description pgtype.Text `json:"description"`
@@ -37,6 +38,7 @@ type CreatePluginProjectParams struct {
 
 func (q *Queries) CreatePluginProject(ctx context.Context, arg CreatePluginProjectParams) (Project, error) {
 	row := q.db.QueryRow(ctx, createPluginProject,
+		arg.ID,
 		arg.WorkspaceID,
 		arg.Title,
 		arg.Description,

@@ -64,8 +64,8 @@ WHERE workspace_id = sqlc.arg('workspace_id')::uuid
 GROUP BY project_id;
 
 -- name: CreatePluginProject :one
-INSERT INTO project (workspace_id, title, description, status)
-VALUES ($1, $2, $3, $4) RETURNING *;
+INSERT INTO project (id, workspace_id, title, description, status)
+VALUES ($1, $2, $3, $4, $5) RETURNING *;
 
 -- name: PatchPluginProject :one
 UPDATE project SET title = COALESCE(sqlc.narg('title'), title),

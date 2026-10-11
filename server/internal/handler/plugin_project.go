@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/middleware"
 	"github.com/multica-ai/multica/server/internal/service"
@@ -237,9 +238,14 @@ func (h *Handler) mutatePluginProject(w http.ResponseWriter, r *http.Request, cr
 		if req.Status != nil {
 			status = *req.Status
 		}
-		project, err = q.CreatePluginProject(r.Context(), db.CreatePluginProjectParams{WorkspaceID: c.WorkspaceID, Title: *req.Title, Description: ptrToText(description), Status: status})
+		project, err = q.CreatePluginProject(r.Context(), db.CreatePluginProjectParams{ID: operationID, WorkspaceID: c.WorkspaceID, Title: *req.Title, Description: ptrToText(description), Status: status})
 	} else {
 		project, err = q.PatchPluginProject(r.Context(), db.PatchPluginProjectParams{ID: projectID, WorkspaceID: c.WorkspaceID, ExpectedRevision: req.ExpectedRevision, Title: ptrToText(req.Title), Description: ptrToText(description), SetDescription: req.Description != nil, Status: ptrToText(req.Status)})
+	}
+	var constraint *pgconn.PgError
+	if errors.As(err, &constraint) && constraint.Code == "23505" {
+		publicapiv1.WriteProblem(w, r, 409, "operation_conflict", "project identity already exists")
+		return
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		publicapiv1.WriteProblem(w, r, 409, "revision_conflict", "project is unavailable or changed since it was read")

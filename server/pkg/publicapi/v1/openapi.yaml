@@ -51,7 +51,7 @@ paths:
     post:
       operationId: createProject
       summary: Create a project with an atomic operation receipt
-      description: Requires plugin_integrations_v1 and a standing credential. Exact operation replay returns the original response with status 200; a changed request with the same operation_id returns 409.
+      description: Requires plugin_integrations_v1 and a standing credential. The created project ID equals operation_id for readback after uncertain outcomes. Existing identities cannot be rebound. Exact operation replay returns the original response with status 200; a changed request with the same operation_id returns 409.
       x-multica-contract: shared_resource
       x-multica-scope: projects:write
       requestBody:
