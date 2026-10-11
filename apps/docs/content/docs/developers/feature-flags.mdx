@@ -78,6 +78,24 @@ plugins_v1:
 
 Omitted defaults and explicitly false defaults remain distinguishable. An empty untargeted YAML entry is not an explicit deployment value. For workspace-only flags, use workspace targeting rather than a member ID. Parent-off still wins over a deployment-on value.
 
+## Deployment-declared flags
+
+`MULTICA_FEATURE_FLAG_DEFINITIONS` declares extra workspace flags without a code change. Its value is a JSON array read once at startup:
+
+```sh
+MULTICA_FEATURE_FLAG_DEFINITIONS='[{"key":"acme.reports","label":"Reports","description":"Monthly reports.","group":"Acme","default":false,"scope_policy":"member_overridable"}]'
+```
+
+| Field | Rule |
+| --- | --- |
+| `key` | Required; matches `^[a-z0-9][a-z0-9._-]{0,99}$`, unique, and not a built-in host key |
+| `label` | Required |
+| `description`, `group` | Optional; `group` defaults to `Other` |
+| `default` | Optional; defaults to `false` |
+| `scope_policy` | `workspace_only` (default) or `member_overridable` |
+
+At most 64 definitions are allowed. Unknown fields, including `parent`, `frozen`, `public`, and `plugin_installation_id`, are rejected. Invalid JSON or definitions prevent startup; an absent or empty value declares no flags. Declared flags behave like other host flags: they appear on the Features page and in the flags API, accept workspace and personal overrides according to their scope policy, and follow `FF_<KEY>` and YAML rules (`acme.reports` maps to `FF_ACME_REPORTS`). They are not public, so `/api/config` and plugin manifests cannot reference them. Removing a definition stops resolving it; stored overrides remain until it is declared again.
+
 ## Manifest version 2
 
 Version 2 adds `contributes.flags` and `requires_flag`. Existing version 1 plugins continue to work, but cannot include the new fields, even as empty lists or empty strings. Unknown manifest versions are rejected. A plugin can declare at most 32 flags, with unique local keys matching `[a-z][a-z0-9_]{1,63}`.
