@@ -106,6 +106,7 @@ var workspaceDeletionManifest = map[string]workspaceDeleteAction{
 	"notification_preference":            workspaceDelete,
 	"personal_access_token":              workspaceDeleteKeep,
 	"pinned_item":                        workspaceDelete,
+	"plugin_project_operation":           workspaceDeleteKeep, // Immutable installation mutation receipts survive uninstall/workspace removal.
 	"plugin_installation":                workspaceDelete,
 	"plugin_hook_schedule":               workspaceDelete,
 	"plugin_invocation":                  workspaceDelete,

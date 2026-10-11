@@ -40,7 +40,7 @@ import {
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { Textarea } from "@multica/ui/components/ui/textarea";
 import { Switch } from "@multica/ui/components/ui/switch";
-import { mcpHooks, PluginHookActivity, PluginMCPApproval, PluginScheduleActivity } from "../../plugins";
+import { PluginPanelSection, mcpHooks, PluginHookActivity, PluginMCPApproval, PluginScheduleActivity } from "../../plugins";
 import { useLocale, useT } from "../../i18n";
 import {
   SettingsCard,
@@ -139,6 +139,9 @@ function scopeDescription(scope: string, t: Translate): string {
     return t(($) => $.plugins.scopes.net, { domain: scope.slice("net:".length) });
   }
   switch (scope) {
+    case "projects:read": return t(($) => $.plugins.scopes.projects_read);
+    case "projects:write": return t(($) => $.plugins.scopes.projects_write);
+    case "installation:read": return t(($) => $.plugins.scopes.installation_read);
     case "issues:read": return t(($) => $.plugins.scopes.issues_read);
     case "issues:write": return t(($) => $.plugins.scopes.issues_write);
     case "comments:read": return t(($) => $.plugins.scopes.comments_read);
@@ -689,6 +692,7 @@ export function PluginsTab() {
 
   return (
     <SettingsTab title={t(($) => $.plugins.title)} scope="workspace">
+      <PluginPanelSection surfaceType="settings_panel" />
       {role && !canManage ? <SettingsReadOnlyNotice wsId={wsId} /> : null}
 
       {canManage ? <PublishAndInstall wsId={wsId} canManage={canManage} /> : null}

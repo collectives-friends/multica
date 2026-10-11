@@ -11,11 +11,14 @@ import "net/http"
 const BasePath = "/v1"
 
 const (
-	PathContext       = "/context"
-	PathIssue         = "/issues/{issue_ref}"
-	PathIssueComments = "/issues/{issue_ref}/comments"
-	PathStorageScope  = "/storage/{scope}"
-	PathStorageValue  = "/storage/{scope}/{key}"
+	PathProjects                  = "/projects"
+	PathProject                   = "/projects/{project_id}"
+	PathInstallationAuthorization = "/installation/authorization"
+	PathContext                   = "/context"
+	PathIssue                     = "/issues/{issue_ref}"
+	PathIssueComments             = "/issues/{issue_ref}/comments"
+	PathStorageScope              = "/storage/{scope}"
+	PathStorageValue              = "/storage/{scope}/{key}"
 )
 
 type ContractKind string
@@ -55,6 +58,12 @@ var sharedRateLimits = []RateLimitProfile{RateLimitUserDefault, RateLimitPluginS
 var pluginRateLimits = []RateLimitProfile{RateLimitPluginStrict}
 
 var Operations = []Operation{
+	{Method: http.MethodGet, Path: PathInstallationAuthorization, Contract: ContractPluginExtension, Policy: OperationPolicy{Credentials: pluginCredentials, Scope: "installation:read", Risk: RiskRead, Audit: AuditNotRequired, RateLimits: pluginRateLimits}},
+	{Method: http.MethodGet, Path: PathProjects, Contract: ContractSharedResource, Policy: OperationPolicy{Credentials: []CredentialKind{CredentialPluginInstall}, Scope: "projects:read", Risk: RiskRead, Audit: AuditPlanned, RateLimits: pluginRateLimits}},
+	{Method: http.MethodPost, Path: PathProjects, Contract: ContractSharedResource, Policy: OperationPolicy{Credentials: []CredentialKind{CredentialPluginInstall}, Scope: "projects:write", Risk: RiskContentWrite, Audit: AuditPlanned, RateLimits: pluginRateLimits}},
+	{Method: http.MethodGet, Path: PathProject, Contract: ContractSharedResource, Policy: OperationPolicy{Credentials: []CredentialKind{CredentialPluginInstall}, Scope: "projects:read", Risk: RiskRead, Audit: AuditPlanned, RateLimits: pluginRateLimits}},
+	{Method: http.MethodPatch, Path: PathProject, Contract: ContractSharedResource, Policy: OperationPolicy{Credentials: []CredentialKind{CredentialPluginInstall}, Scope: "projects:write", Risk: RiskContentWrite, Audit: AuditPlanned, RateLimits: pluginRateLimits}},
+
 	{Method: http.MethodGet, Path: PathContext, Contract: ContractPluginExtension, Policy: OperationPolicy{Credentials: pluginCredentials, Risk: RiskRead, Audit: AuditNotRequired, RateLimits: pluginRateLimits}},
 	{Method: http.MethodGet, Path: PathIssue, Contract: ContractSharedResource, Policy: OperationPolicy{Credentials: sharedCredentials, Scope: "issues:read", Risk: RiskRead, Audit: AuditPlanned, RateLimits: sharedRateLimits}},
 	{Method: http.MethodPatch, Path: PathIssue, Contract: ContractSharedResource, Policy: OperationPolicy{Credentials: sharedCredentials, Scope: "issues:write", Risk: RiskContentWrite, Audit: AuditPlanned, RateLimits: sharedRateLimits}},

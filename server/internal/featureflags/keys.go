@@ -20,7 +20,8 @@ const (
 	ComposioMCPApps = "composio_mcp_apps"
 	// PluginsV1 gates plugin management and new contribution execution per
 	// workspace. Deployment configuration remains an operator kill switch.
-	PluginsV1 = "plugins_v1"
+	PluginsV1            = "plugins_v1"
+	PluginIntegrationsV1 = "plugin_integrations_v1"
 	// TriageV1 gates the Triage inbox (MUL-7189): creating issues into Triage,
 	// triage runs, and the Triage page. It is a GLOBAL switch — per-workspace
 	// targeting has no production wiring — which is enough because a

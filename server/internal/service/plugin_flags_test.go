@@ -149,3 +149,28 @@ func TestHookFlagsFollowActorResolution(t *testing.T) {
 		}
 	}
 }
+
+func TestIntegrationGateCannotBeOmittedFromManifest(t *testing.T) {
+	installation := flagTestPlugin(t)
+	var m map[string]any
+	if err := json.Unmarshal(installation.Manifest, &m); err != nil {
+		t.Fatal(err)
+	}
+	m["scopes"] = []string{"projects:read"}
+	installation.Manifest, _ = json.Marshal(m)
+	source := pluginFlagSource{workspace: map[string]featureflags.Override{featureflags.PluginsV1: {Enabled: true}}}
+	s := &PluginService{FlagResolver: featureflags.NewResolver(featureflags.HostRegistry(), nil, source)}
+	if s.ContributionActive(context.Background(), installation, "", "") {
+		t.Fatal("missing host integrations gate allowed execution")
+	}
+	source.workspace[featureflags.PluginIntegrationsV1] = featureflags.Override{Enabled: true}
+	s.FlagResolver = featureflags.NewResolver(featureflags.HostRegistry(), nil, source)
+	if !s.ContributionActive(context.Background(), installation, "", "") {
+		t.Fatal("enabled integration refused")
+	}
+	source.err = errors.New("flag authority unavailable")
+	s.FlagResolver = featureflags.NewResolver(featureflags.HostRegistry(), nil, source)
+	if s.ContributionActive(context.Background(), installation, "", "") {
+		t.Fatal("flag read error allowed execution")
+	}
+}

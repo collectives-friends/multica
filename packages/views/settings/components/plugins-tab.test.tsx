@@ -1,3 +1,4 @@
+vi.mock("../../plugins/plugin-panel-section", () => ({ PluginPanelSection: () => null }));
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";

@@ -17,6 +17,7 @@ interface PluginSurfaceFrameProps {
   installation: PluginInstallation;
   surface: PluginSurface;
   issueId?: string;
+  projectId?: string;
   className?: string;
 }
 
@@ -27,7 +28,7 @@ interface PluginSurfaceFrameProps {
  * boundary and is always `sandbox="allow-scripts"` without
  * `allow-same-origin`; see buildSurfaceFrameDocument.
  */
-export function PluginSurfaceFrame({ wsId, installation, surface, issueId, className }: PluginSurfaceFrameProps) {
+export function PluginSurfaceFrame({ wsId, installation, surface, issueId, projectId, className }: PluginSurfaceFrameProps) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const anchorRef = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState(DEFAULT_HEIGHT);
@@ -52,7 +53,7 @@ export function PluginSurfaceFrame({ wsId, installation, surface, issueId, class
   // Terminal state belongs to one rendered document on one issue. Comparing
   // the instance keeps an old failure/navigation from surviving a replacement
   // launch even though the new iframe is running normally.
-  const surfaceInstance = useMemo(() => ({ issueId, surfaceDocument }), [issueId, surfaceDocument]);
+  const surfaceInstance = useMemo(() => ({ issueId, projectId, surfaceDocument }), [issueId, projectId, surfaceDocument]);
   const [failedSurfaceInstance, setFailedSurfaceInstance] = useState<typeof surfaceInstance | null>(null);
   const [navigatedSurfaceInstance, setNavigatedSurfaceInstance] = useState<typeof surfaceInstance | null>(null);
   const failed = failedSurfaceInstance === surfaceInstance;
@@ -68,9 +69,10 @@ export function PluginSurfaceFrame({ wsId, installation, surface, issueId, class
       surfaceKey: surface.key,
       bridgeToken: launch?.bridge_token ?? "",
       issueId,
+      projectId,
       onResize: setHeight,
     }),
-    [installation.id, surface.key, launch?.bridge_token, issueId],
+    [installation.id, surface.key, launch?.bridge_token, issueId, projectId],
   );
 
   // The listener is armed BEFORE srcdoc is assigned. That makes the guest-first

@@ -14,6 +14,7 @@ const data = vi.hoisted(() => ({
     digest: "abc",
   } as Record<string, unknown> | null,
   flagEnabled: true,
+  integrationsEnabled: false,
   flags: {resolved: {} as Record<string,{value:boolean;source:string;locked:boolean}>},
 }));
 
@@ -32,7 +33,7 @@ vi.mock("@multica/core/plugins", () => ({
   pluginSurfaceLaunchOptions: () => ({ queryKey: ["surface"] }),
 }));
 vi.mock("@multica/core/paths", () => ({ useCurrentWorkspace: () => ({ id: "workspace-1", name: "Acme", slug: "acme" }) }));
-vi.mock("@multica/core/config", () => ({ useFeatureEnabled: () => data.flagEnabled }));
+vi.mock("@multica/core/config", () => ({ useFeatureEnabled: (key: string) => key === "plugin_integrations_v1" ? data.integrationsEnabled : data.flagEnabled }));
 vi.mock("../platform/local-directory", () => ({ isDesktopShell: () => false }));
 
 import { PluginPanelSection } from "./plugin-panel-section";
@@ -206,4 +207,15 @@ it("unmounts an open panel when a parent change turns its required flag off",()=
   data.flags={resolved:{"plugin:com.example.hello:beta":{value:false,source:"parent:plugins_v1",locked:true}}};
   rerender(<PluginPanelSection issueId="i1"/>);
   expect(screen.queryByTitle("Hello Panel — Hello")).not.toBeInTheDocument();
+});
+
+it.each(["settings_panel", "workspace_panel", "project_panel"] as const)("gates %s independently of plugins_v1", (surfaceType) => {
+  data.flagEnabled = true;
+  data.integrationsEnabled = false;
+  data.installed.plugins = [installation({ surfaces: [{ key: "integration", type: surfaceType, name: "Integration", entry: "ui.js", platforms: [] }] })];
+  const { rerender } = render(<PluginPanelSection surfaceType={surfaceType} projectId="p1" />, { wrapper: Wrapper });
+  expect(screen.queryByTitle("Hello Panel — Integration")).not.toBeInTheDocument();
+  data.integrationsEnabled = true;
+  rerender(<PluginPanelSection surfaceType={surfaceType} projectId="p1" />);
+  expect(screen.getByTitle("Hello Panel — Integration")).toBeInTheDocument();
 });

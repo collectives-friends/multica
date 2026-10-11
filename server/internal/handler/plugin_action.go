@@ -336,7 +336,24 @@ func (h *Handler) GetPluginContext(w http.ResponseWriter, r *http.Request) {
 		issue = &loaded
 	}
 
-	writeJSON(w, http.StatusOK, publicPluginContext(h.PluginService.BuildPluginContext(caller, workspace, user, issue, r.Context())))
+	payload := publicPluginContext(h.PluginService.BuildPluginContext(caller, workspace, user, issue, r.Context()))
+	if id := r.URL.Query().Get("project_id"); id != "" {
+		if _, allowed := h.pluginProjectCaller(w, r, plugincontract.ScopeProjectsRead); !allowed {
+			return
+		}
+		projectID, err := util.ParseUUID(id)
+		if err != nil {
+			publicapiv1.WriteProblem(w, r, 404, "not_found", "project not found")
+			return
+		}
+		project, err := h.Queries.GetProjectInWorkspace(r.Context(), db.GetProjectInWorkspaceParams{ID: projectID, WorkspaceID: caller.WorkspaceID})
+		if err != nil {
+			publicapiv1.WriteProblem(w, r, 404, "not_found", "project not found")
+			return
+		}
+		payload.Project = &publicapiv1.ContextProject{ID: uuidToString(project.ID), Title: project.Title}
+	}
+	writeJSON(w, http.StatusOK, payload)
 }
 
 func publicPluginContext(context service.PluginContext) publicapiv1.Context {

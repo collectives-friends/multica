@@ -62,3 +62,23 @@ FROM issue
 WHERE workspace_id = sqlc.arg('workspace_id')::uuid
   AND project_id = ANY(sqlc.arg('project_ids')::uuid[])
 GROUP BY project_id;
+
+-- name: CreatePluginProject :one
+INSERT INTO project (id, workspace_id, title, description, status)
+VALUES ($1, $2, $3, $4, $5) RETURNING *;
+
+-- name: PatchPluginProject :one
+UPDATE project SET title = COALESCE(sqlc.narg('title'), title),
+ description = CASE WHEN sqlc.arg('set_description')::boolean THEN sqlc.narg('description')::text ELSE description END,
+ status = COALESCE(sqlc.narg('status'), status), updated_at = clock_timestamp()
+WHERE id = sqlc.arg('id') AND workspace_id = sqlc.arg('workspace_id')
+ AND revision = sqlc.arg('expected_revision') RETURNING *;
+
+-- name: GetPluginProjectOperation :one
+SELECT request, response FROM plugin_project_operation WHERE installation_id = $1 AND operation_id = $2;
+
+-- name: InsertPluginProjectOperation :exec
+INSERT INTO plugin_project_operation (installation_id, operation_id, request, response) VALUES ($1,$2,$3,$4);
+
+-- name: LockPluginInstallationForProject :one
+SELECT id FROM plugin_installation WHERE id = $1 AND enabled FOR SHARE;

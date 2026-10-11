@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS plugin_project_operation_identity_idx;

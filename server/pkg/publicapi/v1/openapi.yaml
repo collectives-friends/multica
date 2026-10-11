@@ -12,6 +12,111 @@ servers:
 security:
   - pluginBearer: []
 paths:
+  /installation/authorization:
+    get:
+      operationId: getInstallationAuthorization
+      summary: Verify current installation and callback actor authority
+      description: Requires plugin_integrations_v1. Callback tokens attest current member administration, hook_key and exact host-captured input. Standing tokens never attest human administration. This uncached point-in-time probe is not a writer lease.
+      x-multica-contract: plugin_extension
+      x-multica-scope: installation:read
+      responses:
+        "200":
+          description: Current authorization
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InstallationAuthorization"}
+        default:
+          $ref: "#/components/responses/Problem"
+  /projects:
+    get:
+      operationId: listProjects
+      summary: List installation workspace projects
+      description: Requires plugin_integrations_v1 and a standing credential. Callback credentials are excluded.
+      x-multica-contract: shared_resource
+      x-multica-scope: projects:read
+      responses:
+        "200":
+          description: Workspace projects
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [projects]
+                properties:
+                  projects:
+                    type: array
+                    items: {$ref: "#/components/schemas/Project"}
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createProject
+      summary: Create a project with an atomic operation receipt
+      description: Requires plugin_integrations_v1 and a standing credential. The created project ID equals operation_id for readback after uncertain outcomes. Existing identities cannot be rebound. Exact operation replay returns the original response with status 200; a changed request with the same operation_id returns 409.
+      x-multica-contract: shared_resource
+      x-multica-scope: projects:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - {$ref: "#/components/schemas/ProjectMutation"}
+                - {required: [title]}
+      responses:
+        "201":
+          description: Created project
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Project"}
+        "200":
+          description: Exact replay of original operation
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Project"}
+        default:
+          $ref: "#/components/responses/Problem"
+  /projects/{project_id}:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: getProject
+      summary: Read an installation workspace project
+      description: Requires plugin_integrations_v1 and a standing credential. Callback credentials are excluded.
+      x-multica-contract: shared_resource
+      x-multica-scope: projects:read
+      responses:
+        "200":
+          description: Project and current revision
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Project"}
+        default:
+          $ref: "#/components/responses/Problem"
+    patch:
+      operationId: patchProject
+      summary: Update project content with revision comparison
+      description: Requires plugin_integrations_v1 and a standing credential. Atomically checks expected_revision, writes content and records the operation. At least one content field is required. Missing description preserves it, null clears it. A stale revision or reused operation_id with different content returns 409.
+      x-multica-contract: shared_resource
+      x-multica-scope: projects:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - {$ref: "#/components/schemas/ProjectMutation"}
+                - {required: [expected_revision]}
+      responses:
+        "200":
+          description: Updated project or exact operation replay
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Project"}
+        default:
+          $ref: "#/components/responses/Problem"
   /context:
     get:
       operationId: getPluginContext
@@ -226,6 +331,44 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    Project:
+      type: object
+      required: [id, workspace_id, title, description, status, revision]
+      properties:
+        id: {type: string, format: uuid}
+        workspace_id: {type: string, format: uuid}
+        title: {type: string}
+        description: {type: [string, "null"]}
+        status: {type: string, enum: [planned, in_progress, paused, completed, cancelled]}
+        revision: {type: integer, format: int64, minimum: 1}
+    ProjectMutation:
+      type: object
+      additionalProperties: false
+      required: [operation_id]
+      properties:
+        operation_id: {type: string, format: uuid}
+        expected_revision: {type: integer, format: int64, minimum: 1}
+        title: {type: string, minLength: 1, maxLength: 1000}
+        description: {type: [string, "null"]}
+        status: {type: string, enum: [planned, in_progress, paused, completed, cancelled]}
+    InstallationAuthorization:
+      type: object
+      required: [installation_id, workspace_id, enabled, credential_kind, actor, flags]
+      properties:
+        installation_id: {type: string, format: uuid}
+        workspace_id: {type: string, format: uuid}
+        enabled: {type: boolean, const: true}
+        credential_kind: {type: string, enum: [standing, callback]}
+        flags: {type: object, additionalProperties: {type: boolean}}
+        actor:
+          type: object
+          required: [type, id, admin]
+          properties:
+            type: {type: string, enum: [member, plugin]}
+            id: {type: string}
+            admin: {type: boolean}
+        hook_key: {type: string}
+        input: {}
     Problem:
       type: object
       required: [type, title, status, code, detail, request_id, error]

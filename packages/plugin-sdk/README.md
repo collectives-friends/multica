@@ -122,3 +122,57 @@ rolling the backend back to a v1-only snapshot reader is unsafe.
 and a separate hint that updates while the panel remains open. See
 [Feature flags and plugins](../../apps/docs/content/docs/developers/feature-flags.mdx)
 for administration, CLI commands, resolution, and deployment configuration.
+
+### Workspace and project integrations (experimental)
+
+`settings_panel` renders in shared workspace Plugins settings; `workspace_panel`
+renders on the workspace dashboard. `project_panel` renders in project details
+on web and desktop.
+`multica.context.get()` includes `project: { id, title }` when mounted on a project.
+These are plugin data surfaces, not native project custom properties.
+
+All three surfaces and the `projects:read`, `projects:write` and
+`installation:read` capabilities require the workspace host flag
+`plugin_integrations_v1`, which defaults off and is a child of `plugins_v1`.
+The host enforces this even when the manifest omits `requires_flag`. Plugins
+should also declare their own default-off workspace activation flag whose parent
+is `host:plugin_integrations_v1`, and gate each surface and hook on it.
+
+The SDK exposes `multica.projects.list()`, `.get(id)`, `.create(input)` and
+`.update(id, input)`. Writes support title, nullable description and project
+status only. Each write requires a fresh UUID `operation_id`; creation uses that UUID as the
+project ID so lost responses can be read back without name matching. Updates also require
+`expected_revision` from the last read. The server commits a receipt and mutation
+in one transaction. Retrying the exact operation returns its original response;
+reusing an operation ID with another payload returns 409. Native project edits
+increment the same revision, so stale integration updates return 409. Receipts survive project
+deletion and host uninstall as immutable history; new installations cannot read
+or reuse an old installation’s receipts. Read back
+before deciding whether to issue a new operation after an unknown outcome.
+
+Project operations accept a member session through the sandbox bridge or a
+standing installation credential. Invocation callback credentials cannot use the
+project API. No token enters the iframe.
+
+A backend called through `multica.hooks.invoke()` can authenticate its synchronous
+administrative action using `GET /v1/installation/authorization` with the hook's
+callback credential. The response includes `credential_kind: "callback"`,
+installation/workspace IDs, `hook_key`, the host-captured `input`, and an `actor`
+with a currently checked `admin` boolean (owner/admin). Match the input and hook
+exactly; never infer administration from the hook actor ID or client claims.
+Verify the existing raw-body hook signature and deduplicate `invocation_id` too.
+Callback credentials are revoked when the hook returns.
+
+For asynchronous work, use a scoped standing credential to probe this endpoint
+before each dispatch. Its response has `credential_kind: "standing"` and
+`actor.admin: false`. Require the host and plugin activation flags, and reject
+unknown, unreachable, disabled, uninstalled or revoked installations. This probe
+is a point-in-time check, not a lease or a cross-system transaction: a backend
+must persist its own stop request, fence writers, and drain/read back previously
+sent requests before reporting stopped. Keep backend journals, revisions and
+tombstones after host uninstall.
+
+Local HTTPS integration tests may use the existing exact-origin
+`MULTICA_PLUGIN_DEV_ORIGINS` allowlist with `MULTICA_PLUGIN_DEV_CA`. Public hook
+origins continue through the SSRF-protected transport. This experimental source
+change does not activate a production integration or change an installation pin.

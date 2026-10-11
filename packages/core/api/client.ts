@@ -3287,11 +3287,12 @@ export class ApiClient {
    */
   async callPluginAction(
     installationId: string,
-    request: { method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE"; path: string; body?: unknown; issueId?: string; surfaceKey?: string },
+    request: { method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE"; path: string; body?: unknown; issueId?: string; projectId?: string; surfaceKey?: string },
   ): Promise<unknown> {
-    const query = request.path === "/context" && request.issueId
-      ? `?issue_id=${encodeURIComponent(request.issueId)}`
-      : "";
+    const contextQuery = new URLSearchParams();
+    if (request.issueId) contextQuery.set("issue_id", request.issueId);
+    if (request.projectId) contextQuery.set("project_id", request.projectId);
+    const query = request.path === "/context" && contextQuery.size ? `?${contextQuery}` : "";
     return this.fetch<unknown>(`/api/plugin-bridge/v1${request.path}${query}`, {
       method: request.method,
       headers: { "X-Multica-Plugin-Installation": installationId, ...(request.surfaceKey ? { "X-Multica-Plugin-Surface": request.surfaceKey } : {}) },
