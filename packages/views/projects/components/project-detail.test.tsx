@@ -35,6 +35,8 @@ vi.mock("@tanstack/react-query", () => ({
       case "agents":
       case "pins":
         return { data: [], isLoading: false };
+      case "properties":
+        return { data: [PROPERTY_DEFINITION], isLoading: false };
       default:
         return { data: undefined, isLoading: false };
     }
@@ -43,6 +45,10 @@ vi.mock("@tanstack/react-query", () => ({
 
 vi.mock("@multica/core/projects/queries", () => ({
   projectDetailOptions: () => ({ queryKey: ["project-detail"] }),
+}));
+
+vi.mock("@multica/core/properties", () => ({
+  propertyListOptions: () => ({ queryKey: ["properties"] }),
 }));
 
 vi.mock("@multica/core/projects/mutations", () => ({
@@ -274,6 +280,20 @@ const PROJECT: Project = {
   issue_count: 3,
   done_count: 1,
   resource_count: 0,
+  properties: { "prop-stage": "opt-lead" },
+};
+
+const PROPERTY_DEFINITION = {
+  id: "prop-stage",
+  workspace_id: "workspace-1",
+  name: "Deal-fase",
+  type: "select",
+  config: { options: [{ id: "opt-lead", name: "Meeting booked", color: "#22c55e" }] },
+  position: 1,
+  archived: false,
+  created_at: "2026-06-01T00:00:00Z",
+  updated_at: "2026-06-01T00:00:00Z",
+  resource_type: "project" as const,
 };
 
 function renderProjectDetail() {
@@ -317,6 +337,15 @@ describe("ProjectDetail sharing", () => {
     expect(mocks.copyText).toHaveBeenCalledWith(
       "https://app.example/test-workspace/projects/project-1",
     );
+  });
+});
+
+describe("ProjectDetail custom properties", () => {
+  it("renders an integration-owned project property value read-only", () => {
+    renderProjectDetail();
+
+    expect(screen.getByText("Deal-fase")).toBeInTheDocument();
+    expect(screen.getByText("Meeting booked")).toBeInTheDocument();
   });
 });
 
