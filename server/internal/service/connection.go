@@ -732,7 +732,12 @@ func (s *ConnectionService) proxyWithCredential(ctx context.Context, provider Co
 		}
 	}
 
-	target := strings.TrimRight(provider.BaseURL, "/") + path
+	// Join with an explicit separator: the appended path can then only extend
+	// the path, never the scheme or host. The validated path always starts with
+	// "/", so trimming that one character leaves the URL identical. (Static
+	// analysis only recognizes the host as fixed when the separator is part of
+	// the concatenation.)
+	target := strings.TrimRight(provider.BaseURL, "/") + "/" + strings.TrimPrefix(path, "/")
 	if len(request.Query) > 0 {
 		target += "?" + request.Query.Encode()
 	}
