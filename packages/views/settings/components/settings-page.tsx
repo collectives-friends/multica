@@ -5,6 +5,7 @@ import {
   AlarmClock,
   Bell,
   Blocks,
+  Cable,
   CircleDot,
   CreditCard,
   FolderGit2,
@@ -31,6 +32,7 @@ import { useFeatureEnabled } from "@multica/core/config";
 import { useCurrentMember } from "@multica/core/permissions";
 import {
   BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
+  CONNECTIONS_V1_FLAG,
   PLUGINS_V1_FLAG,
 } from "@multica/core/feature-flags";
 import { resolvePublicFileUrl } from "@multica/core/workspace/avatar-url";
@@ -55,6 +57,7 @@ import { QuickActionsTab } from "./quick-actions-tab";
 import { KeyboardShortcutsTab } from "./keyboard-shortcuts-tab";
 import { FeaturesTab } from "./features-tab";
 import { PluginsTab } from "./plugins-tab";
+import { ConnectionsTab } from "./connections-tab";
 import { McpTab } from "./mcp-tab";
 import { BillingTab } from "./billing-tab";
 import { SETTINGS_ANCHOR_ATTR } from "./settings-layout";
@@ -111,6 +114,7 @@ export function SettingsPage({ extraDeviceTabs = [] }: SettingsPageProps = {}) {
   const isMember = role === "member";
   const navigation = useNavigation();
   const pluginsEnabled = useFeatureEnabled(PLUGINS_V1_FLAG, false);
+  const connectionsEnabled = useFeatureEnabled(CONNECTIONS_V1_FLAG, false);
   const billingEnabled = useFeatureEnabled(
     BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
     false,
@@ -253,6 +257,13 @@ export function SettingsPage({ extraDeviceTabs = [] }: SettingsPageProps = {}) {
             entry("mcp", t(($) => $.page.tabs.mcp), Server, <McpTab />, {
               adminOnly: true,
             }),
+            ...(connectionsEnabled
+              ? [
+                  entry("connections", t(($) => $.page.tabs.connections), Cable, <ConnectionsTab />, {
+                    adminOnly: true,
+                  }),
+                ]
+              : []),
             ...(pluginsEnabled
               ? [
                   entry("plugins", t(($) => $.page.tabs.plugins), Blocks, <PluginsTab />, {

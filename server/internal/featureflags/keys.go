@@ -22,6 +22,12 @@ const (
 	// workspace. Deployment configuration remains an operator kill switch.
 	PluginsV1            = "plugins_v1"
 	PluginIntegrationsV1 = "plugin_integrations_v1"
+	// ConnectionsV1 gates the workspace connection registry: the settings
+	// surface, its API, and (as consumers land) the ability to use a stored
+	// connection. Undeclared reads as enabled so a deployment that upgrades
+	// before declaring the flag still gets the feature; declaring it false is
+	// the kill switch.
+	ConnectionsV1 = "connections_v1"
 	// TriageV1 gates the Triage inbox (MUL-7189): creating issues into Triage,
 	// triage runs, and the Triage page. It is a GLOBAL switch — per-workspace
 	// targeting has no production wiring — which is enough because a

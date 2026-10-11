@@ -20,6 +20,8 @@ const (
 	PathStorageScope              = "/storage/{scope}"
 	PathStorageValue              = "/storage/{scope}/{key}"
 	PathPluginProjectProperties   = "/plugin-project-properties"
+	PathConnections               = "/connections"
+	PathConnectionRequest         = "/connections/{connection_id}/request"
 )
 
 type ContractKind string
@@ -67,6 +69,11 @@ var Operations = []Operation{
 	{Method: http.MethodPut, Path: PathPluginProjectProperties, Contract: ContractPluginExtension, Policy: OperationPolicy{Credentials: []CredentialKind{CredentialPluginInvocation}, Scope: "projects:write", Risk: RiskContentWrite, Audit: AuditPlanned, RateLimits: pluginRateLimits}},
 
 	{Method: http.MethodGet, Path: PathContext, Contract: ContractPluginExtension, Policy: OperationPolicy{Credentials: pluginCredentials, Risk: RiskRead, Audit: AuditNotRequired, RateLimits: pluginRateLimits}},
+	// Connection metadata bound to the installation; carries no credential.
+	{Method: http.MethodGet, Path: PathConnections, Contract: ContractPluginExtension, Policy: OperationPolicy{Credentials: pluginCredentials, Scope: "connections:read", Risk: RiskRead, Audit: AuditNotRequired, RateLimits: pluginRateLimits}},
+	// Host-performed provider call with the stored credential attached. The
+	// caller names a provider-relative path, never a host.
+	{Method: http.MethodPost, Path: PathConnectionRequest, Contract: ContractPluginExtension, Policy: OperationPolicy{Credentials: pluginCredentials, Scope: "connections:invoke", Risk: RiskHigh, Audit: AuditPlanned, RateLimits: pluginRateLimits}},
 	{Method: http.MethodGet, Path: PathIssue, Contract: ContractSharedResource, Policy: OperationPolicy{Credentials: sharedCredentials, Scope: "issues:read", Risk: RiskRead, Audit: AuditPlanned, RateLimits: sharedRateLimits}},
 	{Method: http.MethodPatch, Path: PathIssue, Contract: ContractSharedResource, Policy: OperationPolicy{Credentials: sharedCredentials, Scope: "issues:write", Risk: RiskContentWrite, Audit: AuditPlanned, RateLimits: sharedRateLimits}},
 	{Method: http.MethodGet, Path: PathIssueComments, Contract: ContractSharedResource, Policy: OperationPolicy{Credentials: sharedCredentials, Scope: "comments:read", Risk: RiskRead, Audit: AuditPlanned, RateLimits: sharedRateLimits}},

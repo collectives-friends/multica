@@ -162,6 +162,14 @@ import type {
   NotificationPreferences,
   PluginHookResult,
   PluginInstallation,
+  Connection,
+  ConnectionBinding,
+  ConnectionListResponse,
+  ConnectionProvider,
+  CreateConnectionRequest,
+  UpdateConnectionRequest,
+  SetConnectionSecretRequest,
+  BindConnectionRequest,
   PluginInstallationListResponse,
   PluginPackage,
   PluginPackageListResponse,
@@ -473,6 +481,13 @@ import {
   EMPTY_SHARE_LINK,
   EMPTY_SHARE_LINK_INFO,
   EMPTY_JOIN_SHARE_LINK_RESPONSE,
+  ConnectionProviderListSchema,
+  ConnectionListResponseSchema,
+  ConnectionResponseSchema,
+  ConnectionBindingListSchema,
+  ConnectionBindingResponseSchema,
+  EMPTY_CONNECTION,
+  EMPTY_CONNECTION_LIST,
   type IssueView,
   type IssueViewPreference,
   type CreateIssueViewRequest,
@@ -3050,6 +3065,174 @@ export class ApiClient {
     return parseWithFallback(raw, FeatureFlagAuditSchema, { entries: [] } as FeatureFlagAudit, {
       endpoint: "GET /api/workspaces/{id}/feature-flags/audit",
     });
+  }
+
+  // ── Connections ──────────────────────────────────────────────────────────
+  //
+  // A connection is a shared credential plus its non-secret configuration.
+  // Nothing in this block ever returns a secret value: `configured_secrets`
+  // carries field names, and the stored value is write-only.
+
+  /** The built-in provider registry, with each provider's config schema. */
+  async listConnectionProviders(workspaceId: string): Promise<ConnectionProvider[]> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/connections/providers`);
+    return parseWithFallback(raw, ConnectionProviderListSchema, [] as ConnectionProvider[], {
+      endpoint: "GET /api/workspaces/{id}/connections/providers",
+    });
+  }
+
+  /** The workspace's connections plus the deployment's instance connections. */
+  async listConnections(workspaceId: string): Promise<ConnectionListResponse> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/connections`);
+    return parseWithFallback(raw, ConnectionListResponseSchema, EMPTY_CONNECTION_LIST, {
+      endpoint: "GET /api/workspaces/{id}/connections",
+    });
+  }
+
+  async getConnection(workspaceId: string, connectionId: string): Promise<Connection> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/connections/${encodeURIComponent(connectionId)}`,
+    );
+    const parsed = parseWithFallback(raw, ConnectionResponseSchema, { connection: EMPTY_CONNECTION }, {
+      endpoint: "GET /api/workspaces/{id}/connections/{connectionId}",
+    });
+    return parsed.connection;
+  }
+
+  async createConnection(workspaceId: string, request: CreateConnectionRequest): Promise<Connection> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/connections`, {
+      method: "POST",
+      body: JSON.stringify(request),
+    });
+    const parsed = parseWithFallback(raw, ConnectionResponseSchema, { connection: EMPTY_CONNECTION }, {
+      endpoint: "POST /api/workspaces/{id}/connections",
+    });
+    return parsed.connection;
+  }
+
+  /** A stale `expected_revision` is a 409; re-read and retry the form. */
+  async updateConnection(
+    workspaceId: string,
+    connectionId: string,
+    request: UpdateConnectionRequest,
+  ): Promise<Connection> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/connections/${encodeURIComponent(connectionId)}`,
+      { method: "PATCH", body: JSON.stringify(request) },
+    );
+    const parsed = parseWithFallback(raw, ConnectionResponseSchema, { connection: EMPTY_CONNECTION }, {
+      endpoint: "PATCH /api/workspaces/{id}/connections/{connectionId}",
+    });
+    return parsed.connection;
+  }
+
+  async deleteConnection(workspaceId: string, connectionId: string): Promise<void> {
+    await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/connections/${encodeURIComponent(connectionId)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  /**
+   * Writes one secret. In host mode the value is encrypted at rest and can
+   * never be read back; in reference mode it is the operator's pointer.
+   */
+  async setConnectionSecret(
+    workspaceId: string,
+    connectionId: string,
+    request: SetConnectionSecretRequest,
+  ): Promise<Connection> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/connections/${encodeURIComponent(connectionId)}/secret`,
+      { method: "PUT", body: JSON.stringify(request) },
+    );
+    const parsed = parseWithFallback(raw, ConnectionResponseSchema, { connection: EMPTY_CONNECTION }, {
+      endpoint: "PUT /api/workspaces/{id}/connections/{connectionId}/secret",
+    });
+    return parsed.connection;
+  }
+
+  async deleteConnectionSecret(
+    workspaceId: string,
+    connectionId: string,
+    key: string,
+  ): Promise<Connection> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/connections/${encodeURIComponent(connectionId)}/secret/${encodeURIComponent(key)}`,
+      { method: "DELETE" },
+    );
+    const parsed = parseWithFallback(raw, ConnectionResponseSchema, { connection: EMPTY_CONNECTION }, {
+      endpoint: "DELETE /api/workspaces/{id}/connections/{connectionId}/secret/{key}",
+    });
+    return parsed.connection;
+  }
+
+  /** Runs the provider's read-only probe and returns the recorded status. */
+  async testConnection(workspaceId: string, connectionId: string): Promise<Connection> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/connections/${encodeURIComponent(connectionId)}/test`,
+      { method: "POST" },
+    );
+    const parsed = parseWithFallback(raw, ConnectionResponseSchema, { connection: EMPTY_CONNECTION }, {
+      endpoint: "POST /api/workspaces/{id}/connections/{connectionId}/test",
+    });
+    return parsed.connection;
+  }
+
+  async setConnectionEnabled(
+    workspaceId: string,
+    connectionId: string,
+    enabled: boolean,
+  ): Promise<Connection> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/connections/${encodeURIComponent(connectionId)}/${enabled ? "enable" : "disable"}`,
+      { method: "POST" },
+    );
+    const parsed = parseWithFallback(raw, ConnectionResponseSchema, { connection: EMPTY_CONNECTION }, {
+      endpoint: "POST /api/workspaces/{id}/connections/{connectionId}/enable|disable",
+    });
+    return parsed.connection;
+  }
+
+  async listConnectionBindings(workspaceId: string, connectionId: string): Promise<ConnectionBinding[]> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/connections/${encodeURIComponent(connectionId)}/bindings`,
+    );
+    const parsed = parseWithFallback(raw, ConnectionBindingListSchema, { bindings: [] }, {
+      endpoint: "GET /api/workspaces/{id}/connections/{connectionId}/bindings",
+    });
+    return parsed.bindings;
+  }
+
+  /** Grants one consumer the use of this connection. */
+  async bindConnection(
+    workspaceId: string,
+    connectionId: string,
+    request: BindConnectionRequest,
+  ): Promise<ConnectionBinding> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/connections/${encodeURIComponent(connectionId)}/bindings`,
+      { method: "POST", body: JSON.stringify(request) },
+    );
+    const parsed = parseWithFallback(
+      raw,
+      ConnectionBindingResponseSchema,
+      { binding: { id: "", consumer_type: request.consumer_type, consumer_id: request.consumer_id, enabled: true, created_at: "" } },
+      { endpoint: "POST /api/workspaces/{id}/connections/{connectionId}/bindings" },
+    );
+    return parsed.binding;
+  }
+
+  async unbindConnection(
+    workspaceId: string,
+    connectionId: string,
+    consumerType: string,
+    consumerId: string,
+  ): Promise<void> {
+    await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/connections/${encodeURIComponent(connectionId)}/bindings/${encodeURIComponent(consumerType)}/${encodeURIComponent(consumerId)}`,
+      { method: "DELETE" },
+    );
   }
 
   async listPluginInstallations(workspaceId: string): Promise<PluginInstallationListResponse> {

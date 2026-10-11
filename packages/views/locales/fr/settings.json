@@ -406,7 +406,8 @@
       "code": "Code",
       "channels": "Messagerie",
       "apps": "Applications connectées",
-      "features": "Fonctionnalités"
+      "features": "Fonctionnalités",
+      "connections": "Connexions"
     },
     "groups": {
       "personal": "Personnel",
@@ -490,7 +491,9 @@
       "unknown": "Accès non reconnu — ne pas installer",
       "projects_read": "Read workspace projects",
       "projects_write": "Create and update workspace projects",
-      "installation_read": "Verify installation and invoking member permissions"
+      "installation_read": "Verify installation and invoking member permissions",
+      "connections_read": "Voir les connexions liées à ce plugin par l'espace de travail",
+      "connections_invoke": "Utiliser une connexion liée via l'hôte (l'identifiant n'est jamais partagé)"
     },
     "hook_circuit_open": "La distribution des hooks est arrêtée après des échecs répétés.",
     "hook_recent_failures": "{{count}} appels de hook récents ont échoué.",
@@ -515,6 +518,11 @@
       "installed_version": "Utilisés",
       "review_install": "Vérifier et installer",
       "review_upgrade": "Vérifier et mettre à niveau"
+    },
+    "connections": {
+      "title": "Connexions",
+      "consent_title": "Ce plugin nécessite une connexion",
+      "consent_description": "Après l'installation, un administrateur associe une connexion de l'espace de travail à ce plugin dans Paramètres → Connexions. D'ici là, le plugin ne peut pas l'utiliser."
     }
   },
   "properties": {
@@ -1483,5 +1491,84 @@
     "forced_off": "Désactivation imposée",
     "workspace_default": "Par défaut dans l’espace de travail : {{state}}",
     "off_parent": "Désactivé (parent)"
+  },
+  "connections": {
+    "title": "Connexions",
+    "description": "Identifiants partagés pour des systèmes externes, utilisables par les plugins, les agents et les modules natifs.",
+    "loading": "Chargement des connexions",
+    "load_failed": "Impossible de charger les connexions",
+    "load_failed_description": "Réessayez. Les connexions existantes ne sont pas affectées.",
+    "empty": "Aucune connexion pour l'instant.",
+    "action_failed": "Échec de l'action sur la connexion",
+    "enabled": "Connexion activée",
+    "disabled": "Connexion désactivée",
+    "enabled_label": "Activer la connexion",
+    "test": "Tester la connexion",
+    "test_ok": "Connexion vérifiée",
+    "test_failed": "Échec du test de connexion",
+    "delete": "Supprimer la connexion",
+    "deleted": "Connexion supprimée",
+    "reaches": "Accède à {{domains}}",
+    "status": {
+      "unchecked": "Non vérifiée",
+      "ok": "Vérifiée",
+      "degraded": "Dégradée",
+      "error": "Échec",
+      "needs_reauth": "Identifiant refusé"
+    },
+    "level": {
+      "instance": "Déploiement"
+    },
+    "installed": {
+      "title": "Connexions"
+    },
+    "create": {
+      "title": "Ajouter une connexion",
+      "provider": "Système",
+      "name": "Nom",
+      "name_placeholder": "Attio production",
+      "environment_production": "Production",
+      "environment_fixture": "Test",
+      "secret_mode": "Stockage de l'identifiant",
+      "secret_mode_host": "Stocké dans Multica (chiffré)",
+      "secret_mode_reference": "Référence externe (gestionnaire de secrets)",
+      "submit": "Créer",
+      "created": "Connexion créée"
+    },
+    "secret": {
+      "title": "Identifiant",
+      "save": "Enregistrer",
+      "remove": "Supprimer",
+      "saved": "Identifiant enregistré",
+      "removed": "Identifiant supprimé",
+      "configured": "Configuré",
+      "not_configured": "Non configuré",
+      "host_hint": "Stocké chiffré et jamais réaffiché.",
+      "reference_hint": "Un pointeur résolu par votre déploiement ; la valeur n'entre jamais dans Multica.",
+      "placeholder": "Collez l'identifiant",
+      "placeholder_set": "Stocké — collez pour remplacer",
+      "reference_placeholder": "ex. coffre/nom-du-secret"
+    },
+    "config": {
+      "title": "Configuration",
+      "name": "Nom",
+      "environment": "Environnement",
+      "save": "Enregistrer",
+      "saved": "Configuration enregistrée",
+      "revision_conflict": "Quelqu'un d'autre a modifié cette connexion. Rechargez et réessayez."
+    },
+    "bindings": {
+      "title": "Utilisateurs autorisés",
+      "empty": "Aucun consommateur autorisé pour l'instant.",
+      "consumer_id_placeholder": "ID du consommateur",
+      "bind": "Autoriser",
+      "unbind": "Révoquer",
+      "bound": "Consommateur autorisé",
+      "unbound": "Consommateur révoqué",
+      "plugin_installation": "Plugin",
+      "agent": "Agent",
+      "native": "Module natif",
+      "choose": "Sélectionner…"
+    }
   }
 }

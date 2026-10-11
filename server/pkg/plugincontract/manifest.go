@@ -27,9 +27,14 @@ import (
 )
 
 const (
-	// Supported manifest versions. Version 2 adds feature flags.
+	// Supported manifest versions. Version 2 adds feature flags. Version 3
+	// adds required connections; it is a new version rather than a v2 field
+	// because the published parser rejects unknown fields, so a v2 manifest
+	// carrying `requires_connections` would fail to install on a host that
+	// predates the field instead of being ignored.
 	ManifestVersion1 = 1
 	ManifestVersion2 = 2
+	ManifestVersion3 = 3
 
 	// ManifestFilename is the conventional file name inside a plugin package.
 	ManifestFilename = "multica.plugin.json"
@@ -108,6 +113,13 @@ const (
 	ScopeStorageUser      = "storage:user"
 	ScopeStorageWorkspace = "storage:workspace"
 
+	// Connection scopes. `read` exposes bound connection metadata (no secret);
+	// `invoke` lets the host perform an outbound call with a bound credential,
+	// which is the only way a plugin ever uses one — the value itself never
+	// crosses the Action API.
+	ScopeConnectionsRead   = "connections:read"
+	ScopeConnectionsInvoke = "connections:invoke"
+
 	// ScopeNetPrefix guards outbound network access: both the iframe CSP
 	// connect-src allowlist and the hook transport host check derive from it.
 	ScopeNetPrefix = "net:"
@@ -125,19 +137,21 @@ const (
 )
 
 var fixedScopes = map[string]bool{
-	ScopeProjectsRead:     true,
-	ScopeProjectsWrite:    true,
-	ScopeInstallationRead: true,
-	ScopeIssuesRead:       true,
-	ScopeIssuesWrite:      true,
-	ScopeCommentsRead:     true,
-	ScopeCommentsWrite:    true,
-	ScopeTasksRead:        true,
-	ScopeTasksWrite:       true,
-	ScopeAgentsRead:       true,
-	ScopeMembersRead:      true,
-	ScopeStorageUser:      true,
-	ScopeStorageWorkspace: true,
+	ScopeProjectsRead:      true,
+	ScopeProjectsWrite:     true,
+	ScopeInstallationRead:  true,
+	ScopeIssuesRead:        true,
+	ScopeIssuesWrite:       true,
+	ScopeCommentsRead:      true,
+	ScopeCommentsWrite:     true,
+	ScopeTasksRead:         true,
+	ScopeTasksWrite:        true,
+	ScopeAgentsRead:        true,
+	ScopeMembersRead:       true,
+	ScopeStorageUser:       true,
+	ScopeStorageWorkspace:  true,
+	ScopeConnectionsRead:   true,
+	ScopeConnectionsInvoke: true,
 }
 
 func hasScope(scopes []string, want string) bool {
@@ -194,8 +208,20 @@ type Manifest struct {
 	Icon            string       `json:"icon,omitempty"`
 	Scopes          []string     `json:"scopes"`
 	Config          ConfigSchema `json:"config,omitempty"`
-	Contributes     Contributes  `json:"contributes"`
+	// RequiresConnections names the built-in connection providers this plugin
+	// needs (for example "attio"). It is a declaration, not a grant: an
+	// administrator still binds a workspace connection, and the host refuses
+	// every use without that binding.
+	RequiresConnections []string    `json:"requires_connections,omitempty"`
+	Contributes         Contributes `json:"contributes"`
 }
+
+// usesConnections reports whether the manifest declares required connections,
+// which gates the manifest version and the host capability check.
+func (m Manifest) usesConnections() bool { return len(m.RequiresConnections) > 0 }
+
+// MaxRequiredConnections bounds the consent list an administrator has to read.
+const MaxRequiredConnections = 32
 
 type Author struct {
 	Name string `json:"name"`
@@ -395,9 +421,16 @@ func ParseManifest(raw []byte) (Manifest, []byte, error) {
 		if err := rejectV2Fields(raw); err != nil {
 			return Manifest{}, nil, err
 		}
+		if err := rejectV3Fields(raw); err != nil {
+			return Manifest{}, nil, err
+		}
 	case ManifestVersion2:
+		if err := rejectV3Fields(raw); err != nil {
+			return Manifest{}, nil, err
+		}
+	case ManifestVersion3:
 	default:
-		return Manifest{}, nil, fmt.Errorf("unsupported manifest_version %d (supported: 1, 2)", header.ManifestVersion)
+		return Manifest{}, nil, fmt.Errorf("unsupported manifest_version %d (supported: 1, 2, 3)", header.ManifestVersion)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -432,8 +465,8 @@ func rejectTrailingJSON(decoder *json.Decoder) error {
 }
 
 func (m Manifest) Validate() error {
-	if m.ManifestVersion != ManifestVersion1 && m.ManifestVersion != ManifestVersion2 {
-		return fmt.Errorf("unsupported manifest_version %d (supported: 1, 2)", m.ManifestVersion)
+	if m.ManifestVersion != ManifestVersion1 && m.ManifestVersion != ManifestVersion2 && m.ManifestVersion != ManifestVersion3 {
+		return fmt.Errorf("unsupported manifest_version %d (supported: 1, 2, 3)", m.ManifestVersion)
 	}
 	if err := m.validateFlags(nil); err != nil {
 		return err
@@ -476,10 +509,36 @@ func (m Manifest) Validate() error {
 	if err := m.validateScopes(); err != nil {
 		return err
 	}
+	if err := m.validateRequiresConnections(); err != nil {
+		return err
+	}
 	if err := m.validateConfig(); err != nil {
 		return err
 	}
 	return m.validateContributions()
+}
+
+// validateRequiresConnections checks the declaration's shape only. Whether a
+// host knows the provider, and whether a workspace has bound one, are runtime
+// facts the host checks against its own provider registry.
+func (m Manifest) validateRequiresConnections() error {
+	if m.ManifestVersion < ManifestVersion3 && m.usesConnections() {
+		return fmt.Errorf("requires_connections requires manifest_version 3")
+	}
+	if len(m.RequiresConnections) > MaxRequiredConnections {
+		return fmt.Errorf("requires_connections must not exceed %d entries", MaxRequiredConnections)
+	}
+	seen := map[string]bool{}
+	for index, key := range m.RequiresConnections {
+		if len(key) > 128 || !pluginKeySegmentPattern.MatchString(key) {
+			return fmt.Errorf("requires_connections[%d] is not a valid provider key", index)
+		}
+		if seen[key] {
+			return fmt.Errorf("requires_connections contains duplicate value %q", key)
+		}
+		seen[key] = true
+	}
+	return nil
 }
 
 func (m Manifest) validateScopes() error {

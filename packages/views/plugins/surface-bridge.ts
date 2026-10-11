@@ -35,6 +35,12 @@ const ALLOWED_PATHS: RegExp[] = [
   // this bridge was created for — a surface cannot reach another plugin's
   // hook by naming it here.
   /^\/hooks\/[^/]+$/,
+  // Connections bound to this installation. The list is metadata only; the
+  // request route makes the host attach the stored credential, so no secret
+  // ever crosses into the frame. The server re-checks the binding and the
+  // declared scope on both.
+  /^\/connections$/,
+  /^\/connections\/[^/]+\/request$/,
 ];
 
 const MAX_RESIZE_PX = 4000;

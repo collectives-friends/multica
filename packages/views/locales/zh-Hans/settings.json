@@ -405,7 +405,8 @@
       "code": "代码",
       "channels": "消息渠道",
       "apps": "已连接应用",
-      "features": "功能"
+      "features": "功能",
+      "connections": "连接"
     },
     "groups": {
       "personal": "个人",
@@ -487,7 +488,9 @@
       "unknown": "无法识别的权限 — 请勿安装",
       "projects_read": "Read workspace projects",
       "projects_write": "Create and update workspace projects",
-      "installation_read": "Verify installation and invoking member permissions"
+      "installation_read": "Verify installation and invoking member permissions",
+      "connections_read": "查看工作区绑定到此插件的连接",
+      "connections_invoke": "通过宿主使用已绑定的连接（凭据永不共享）"
     },
     "hook_circuit_open": "连续失败后已停止投递该 hook。",
     "hook_recent_failures": "最近有 {{count}} 次 hook 调用失败。",
@@ -512,6 +515,11 @@
       "installed_version": "使用中",
       "review_install": "查看并安装",
       "review_upgrade": "查看并升级"
+    },
+    "connections": {
+      "title": "连接",
+      "consent_title": "此插件需要连接",
+      "consent_description": "安装后，管理员在“设置 → 连接”中将工作区连接绑定到此插件。在此之前插件无法使用该连接。"
     }
   },
   "properties": {
@@ -1473,5 +1481,84 @@
     "forced_off": "强制关闭",
     "workspace_default": "工作区默认值：{{state}}",
     "off_parent": "关闭（上级功能）"
+  },
+  "connections": {
+    "title": "连接",
+    "description": "供外部系统使用的共享凭据，可供插件、代理和原生模块使用。",
+    "loading": "正在加载连接",
+    "load_failed": "无法加载连接",
+    "load_failed_description": "请重试。现有连接不受影响。",
+    "empty": "还没有连接。",
+    "action_failed": "连接操作失败",
+    "enabled": "连接已启用",
+    "disabled": "连接已禁用",
+    "enabled_label": "启用连接",
+    "test": "测试连接",
+    "test_ok": "连接已验证",
+    "test_failed": "连接测试失败",
+    "delete": "删除连接",
+    "deleted": "连接已删除",
+    "reaches": "访问 {{domains}}",
+    "status": {
+      "unchecked": "未验证",
+      "ok": "已验证",
+      "degraded": "降级",
+      "error": "失败",
+      "needs_reauth": "凭据被拒绝"
+    },
+    "level": {
+      "instance": "部署"
+    },
+    "installed": {
+      "title": "连接"
+    },
+    "create": {
+      "title": "添加连接",
+      "provider": "系统",
+      "name": "名称",
+      "name_placeholder": "Attio production",
+      "environment_production": "生产",
+      "environment_fixture": "测试",
+      "secret_mode": "凭据存储",
+      "secret_mode_host": "存储在 Multica（加密）",
+      "secret_mode_reference": "外部引用（密钥管理器）",
+      "submit": "创建",
+      "created": "连接已创建"
+    },
+    "secret": {
+      "title": "凭据",
+      "save": "保存",
+      "remove": "删除",
+      "saved": "凭据已保存",
+      "removed": "凭据已删除",
+      "configured": "已配置",
+      "not_configured": "未配置",
+      "host_hint": "加密存储，之后不再显示。",
+      "reference_hint": "由部署解析的指针；值不会进入 Multica。",
+      "placeholder": "粘贴凭据",
+      "placeholder_set": "已存储 — 粘贴以替换",
+      "reference_placeholder": "例如 vault-name/secret-name"
+    },
+    "config": {
+      "title": "配置",
+      "name": "名称",
+      "environment": "环境",
+      "save": "保存",
+      "saved": "配置已保存",
+      "revision_conflict": "其他人更改了此连接。请重新加载后重试。"
+    },
+    "bindings": {
+      "title": "允许的使用者",
+      "empty": "还没有允许的使用者。",
+      "consumer_id_placeholder": "使用者 ID",
+      "bind": "允许",
+      "unbind": "撤销",
+      "bound": "已允许使用者",
+      "unbound": "已撤销使用者",
+      "plugin_installation": "插件",
+      "agent": "代理",
+      "native": "原生模块",
+      "choose": "选择…"
+    }
   }
 }

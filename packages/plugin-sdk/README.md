@@ -176,3 +176,46 @@ Local HTTPS integration tests may use the existing exact-origin
 `MULTICA_PLUGIN_DEV_ORIGINS` allowlist with `MULTICA_PLUGIN_DEV_CA`. Public hook
 origins continue through the SSRF-protected transport. This experimental source
 change does not activate a production integration or change an installation pin.
+
+### Connections (manifest version 3)
+
+A connection is a workspace-managed credential for an external system (Attio,
+Google, Microsoft 365, …). Your plugin never holds one. Declare what you need in
+a **manifest version 3** plugin and an administrator binds a workspace
+connection to your installation in **Settings → Connections**:
+
+```json
+{
+  "manifest_version": 3,
+  "requires_connections": ["attio"]
+}
+```
+
+`requires_connections` is a declaration, not a grant — it is what the consent
+screen lists — and it needs the `connections:read` and/or `connections:invoke`
+scopes like any other access. Until an administrator binds a connection, the
+host refuses every use.
+
+```js
+const connections = await multica.connections.list();
+const attio = connections.find((c) => c.provider_key === "attio" && c.enabled);
+
+const response = await multica.connections.request(attio.id, {
+  method: "POST",
+  path: "/v2/objects/deals/records",   // relative to the provider's API base URL
+  body: { data: { values: { name: "Acme" } } },
+});
+const parsed = JSON.parse(response.body); // { status, content_type, body }
+```
+
+`path` is relative to the provider's API base URL, which is fixed by the host —
+an absolute URL, a protocol-relative path or `..` is refused before anything is
+dialed, and the request must still land on a host the provider declared. Both
+directions are size-bounded, and a `reference`-mode connection cannot be proxied
+at all: the host cannot read a value its operator owns. `response.status` is the
+provider's own HTTP status, not the host's verdict; a refused call throws
+`MulticaPluginError` instead.
+
+A hook backend can use the same routes over the Public API with its standing or
+callback credential (`GET /v1/connections`,
+`POST /v1/connections/{id}/request`); the binding is the same either way.

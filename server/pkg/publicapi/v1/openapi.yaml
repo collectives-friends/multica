@@ -301,6 +301,46 @@ paths:
           description: Deleted
         default:
           $ref: "#/components/responses/Problem"
+  /connections:
+    get:
+      operationId: listPluginConnections
+      summary: List connections bound to this installation
+      description: Metadata and status only; never a credential value or ciphertext. Requires the connections:read scope and an enabled binding.
+      x-multica-contract: plugin_extension
+      x-multica-scope: connections:read
+      responses:
+        "200":
+          description: Bound connections
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionListResponse"
+        default:
+          $ref: "#/components/responses/Problem"
+  /connections/{connection_id}/request:
+    parameters:
+      - $ref: "#/components/parameters/ConnectionId"
+    post:
+      operationId: invokePluginConnection
+      summary: Perform a provider-relative call with the stored credential
+      description: The host attaches the bound credential and performs the call; the caller supplies only a provider-relative path. Requires the connections:invoke scope and an enabled binding. Reference-mode connections are refused because the host cannot read the value its operator owns.
+      x-multica-contract: plugin_extension
+      x-multica-scope: connections:invoke
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectionRequest"
+      responses:
+        "200":
+          description: Provider response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionResponse"
+        default:
+          $ref: "#/components/responses/Problem"
 components:
   securitySchemes:
     pluginBearer:
@@ -322,6 +362,11 @@ components:
       schema:
         type: string
         enum: [user, workspace]
+    ConnectionId:
+      name: connection_id
+      in: path
+      required: true
+      schema: { type: string }
     StorageKey:
       name: key
       in: path
@@ -632,3 +677,44 @@ components:
       required: [value]
       properties:
         value: { type: string, maxLength: 102400 }
+
+    Connection:
+      type: object
+      required: [id, provider_key, name, environment, status, enabled]
+      properties:
+        id: { type: string }
+        provider_key: { type: string }
+        name: { type: string }
+        environment: { type: string }
+        status: { type: string }
+        status_detail: { type: string }
+        enabled: { type: boolean }
+        capabilities: { type: array, items: { type: string } }
+        has_proxy: { type: boolean }
+        has_health: { type: boolean }
+    ConnectionListResponse:
+      type: object
+      required: [connections]
+      properties:
+        connections:
+          type: array
+          items:
+            $ref: "#/components/schemas/Connection"
+    ConnectionRequest:
+      type: object
+      required: [method, path]
+      properties:
+        method: { type: string, enum: [GET, POST, PATCH, PUT, DELETE] }
+        path: { type: string, description: Relative to the provider's API base URL; must start with "/". }
+        query:
+          type: object
+          additionalProperties: { type: string }
+        body: {}
+        content_type: { type: string }
+    ConnectionResponse:
+      type: object
+      required: [status, content_type, body]
+      properties:
+        status: { type: integer }
+        content_type: { type: string }
+        body: { type: string, description: The provider's response body, opaque to the host. }

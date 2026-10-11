@@ -76,13 +76,13 @@ func TestManifestV1RejectsV2FieldsEvenEmpty(t *testing.T) {
 }
 
 func TestManifestVersionDispatch(t *testing.T) {
-	for _, version := range []int{0, 3, -1, 99} {
+	for _, version := range []int{0, 4, -1, 99} {
 		raw := mutate(t, func(doc map[string]any) { doc["manifest_version"] = version; doc["future_field"] = true })
 		if _, _, err := ParseManifest(raw); err == nil || !strings.Contains(err.Error(), "unsupported manifest_version") {
 			t.Fatalf("version %d: %v", version, err)
 		}
 	}
-	for _, version := range []int{1, 2} {
+	for _, version := range []int{1, 2, 3} {
 		raw := mutate(t, func(doc map[string]any) { doc["manifest_version"] = version })
 		if _, _, err := ParseManifest(raw); err != nil {
 			t.Fatal(err)

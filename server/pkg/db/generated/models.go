@@ -617,6 +617,47 @@ type CommentReaction struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type Connection struct {
+	ID            pgtype.UUID        `json:"id"`
+	Level         string             `json:"level"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	ProviderKey   string             `json:"provider_key"`
+	Name          string             `json:"name"`
+	Environment   string             `json:"environment"`
+	Config        []byte             `json:"config"`
+	SecretMode    string             `json:"secret_mode"`
+	Status        string             `json:"status"`
+	StatusDetail  string             `json:"status_detail"`
+	LastCheckedAt pgtype.Timestamptz `json:"last_checked_at"`
+	Enabled       bool               `json:"enabled"`
+	Revision      int64              `json:"revision"`
+	CreatedBy     pgtype.UUID        `json:"created_by"`
+	UpdatedBy     pgtype.UUID        `json:"updated_by"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ConnectionBinding struct {
+	ID           pgtype.UUID        `json:"id"`
+	ConnectionID pgtype.UUID        `json:"connection_id"`
+	ConsumerType string             `json:"consumer_type"`
+	ConsumerID   pgtype.UUID        `json:"consumer_id"`
+	Enabled      bool               `json:"enabled"`
+	CreatedBy    pgtype.UUID        `json:"created_by"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ConnectionSecret struct {
+	ID           pgtype.UUID        `json:"id"`
+	ConnectionID pgtype.UUID        `json:"connection_id"`
+	Key          string             `json:"key"`
+	Ciphertext   []byte             `json:"ciphertext"`
+	Reference    string             `json:"reference"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
 type ContactSalesInquiry struct {
 	ID              pgtype.UUID        `json:"id"`
 	FirstName       string             `json:"first_name"`

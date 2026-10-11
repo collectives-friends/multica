@@ -68,6 +68,8 @@ import type {
   IssueStatusEntry,
   ListIssueStatusesResponse,
   NotificationPreferenceResponse,
+  Connection,
+  ConnectionListResponse,
   PluginInstallation,
   PluginInstallationListResponse,
   PluginPackage,
@@ -249,6 +251,7 @@ export const PluginManifestSummarySchema = z.object({
     name: z.string().default(""),
     url: z.string().optional(),
   }).loose().default({ name: "" }),
+  requires_connections: z.array(z.string()).default([]),
   contributes: z.object({
     hooks: z.array(z.object({
       key: z.string().default(""),
@@ -3713,3 +3716,118 @@ export const RuntimeProfileSchema = z
     runtime_type: profile.runtime_type || profile.protocol_family,
   }));
 export const RuntimeProfileListSchema = z.array(RuntimeProfileSchema);
+
+// ── Connections ─────────────────────────────────────────────────────────────
+//
+// A connection's read shape carries configuration and status but no credential
+// material. `configured_secrets` is names only; a value must never parse into
+// the cache, so nothing here maps a secret field to a value.
+
+export const ConnectionConfigFieldSchema = z
+  .object({
+    key: z.string(),
+    type: z.string().catch("string"),
+    label: z.string().default(""),
+    description: z.string().optional(),
+    required: z.boolean().optional(),
+    options: z.array(z.string()).optional(),
+    placeholder: z.string().optional(),
+    multiline: z.boolean().optional(),
+  })
+  .passthrough();
+
+export const ConnectionProviderSchema = z
+  .object({
+    key: z.string(),
+    display_name: z.string().default(""),
+    category: z.string().catch("custom"),
+    auth_kind: z.string().catch("api_key"),
+    secret_keys: z.array(z.string()).catch([]),
+    config_schema: z.array(ConnectionConfigFieldSchema).catch([]),
+    net_domains: z.array(z.string()).catch([]),
+    capabilities: z.array(z.string()).catch([]),
+    has_health: z.boolean().catch(false),
+  })
+  .passthrough();
+
+export const ConnectionProviderListSchema = z.array(ConnectionProviderSchema);
+
+/**
+ * The read shape of one connection. Unlike the other connection schemas this
+ * one must NOT be `.passthrough()`: keeping unknown fields would let a server
+ * that regressed to returning credential material land it in the query cache.
+ * zod strips unknown keys by default, so the client only ever holds the
+ * non-secret shape.
+ */
+export const ConnectionSchema = z
+  .object({
+    id: z.string().default(""),
+    level: z.string().catch("workspace"),
+    workspace_id: z.string().optional(),
+    provider_key: z.string().default(""),
+    name: z.string().default(""),
+    environment: z.string().catch("production"),
+    config: z.record(z.string(), z.unknown()).catch({}),
+    secret_mode: z.string().catch("host"),
+    configured_secrets: z.array(z.string()).catch([]),
+    status: z.string().catch("unchecked"),
+    status_detail: z.string().catch(""),
+    last_checked_at: z.string().optional(),
+    enabled: z.boolean().catch(true),
+    revision: z.number().catch(1),
+    read_only: z.boolean().catch(true),
+    created_at: z.string().catch(""),
+    updated_at: z.string().catch(""),
+  });
+
+export const ConnectionListResponseSchema = z
+  .object({
+    connections: z.array(ConnectionSchema).catch([]),
+    can_manage: z.boolean().catch(false),
+  })
+  .passthrough();
+
+export const ConnectionResponseSchema = z
+  .object({ connection: ConnectionSchema })
+  .passthrough();
+
+export const ConnectionBindingSchema = z
+  .object({
+    id: z.string().default(""),
+    consumer_type: z.string().catch("native"),
+    consumer_id: z.string().default(""),
+    enabled: z.boolean().catch(true),
+    created_at: z.string().catch(""),
+  })
+  .passthrough();
+
+export const ConnectionBindingListSchema = z
+  .object({ bindings: z.array(ConnectionBindingSchema).catch([]) })
+  .passthrough();
+
+export const ConnectionBindingResponseSchema = z
+  .object({ binding: ConnectionBindingSchema })
+  .passthrough();
+
+export const EMPTY_CONNECTION: Connection = {
+  id: "",
+  level: "workspace",
+  provider_key: "",
+  name: "",
+  environment: "production",
+  config: {},
+  secret_mode: "host",
+  configured_secrets: [],
+  status: "unchecked",
+  status_detail: "",
+  enabled: true,
+  revision: 1,
+  read_only: true,
+  created_at: "",
+  updated_at: "",
+};
+
+export const EMPTY_CONNECTION_LIST: ConnectionListResponse = {
+  connections: [],
+  can_manage: false,
+};

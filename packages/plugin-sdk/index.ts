@@ -75,6 +75,43 @@ export interface StorageKey {
   updated_at: string;
 }
 
+/**
+ * One connection an administrator bound to this installation. Metadata and
+ * status only: a credential value never crosses the bridge.
+ */
+export interface PluginConnection {
+  id: string;
+  provider_key: string;
+  name: string;
+  environment: string;
+  /** "unchecked" | "ok" | "degraded" | "error" | "needs_reauth" */
+  status: string;
+  status_detail: string;
+  enabled: boolean;
+  capabilities: string[];
+  /** False when the provider has no API base URL, so nothing can be proxied. */
+  has_proxy: boolean;
+  has_health: boolean;
+}
+
+export interface ConnectionRequestInput {
+  method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
+  /** Relative to the provider's API base URL; must start with "/". */
+  path: string;
+  query?: Record<string, string>;
+  /** Sent as JSON unless `contentType` says otherwise. */
+  body?: unknown;
+  contentType?: string;
+}
+
+export interface ConnectionResponse {
+  /** The provider's own HTTP status; it is not the host's verdict. */
+  status: number;
+  content_type: string;
+  /** The provider's response body, opaque to the host. */
+  body: string;
+}
+
 /** Thrown when the host refuses or the call fails. `status` mirrors HTTP. */
 export class MulticaPluginError extends Error {
   readonly status: number;
@@ -279,6 +316,27 @@ export const multica = {
   storage: {
     workspace: storageApi("workspace"),
     user: storageApi("user"),
+  },
+
+  /**
+   * Connections an administrator bound to this installation. The credential
+   * itself is never here: `request` asks the host to perform one call with it
+   * attached, which is the only way a surface uses a stored secret.
+   */
+  connections: {
+    async list(): Promise<PluginConnection[]> {
+      const result = await bridge.request<{ connections: PluginConnection[] }>("GET", "/connections");
+      return result.connections ?? [];
+    },
+    async request(connectionId: string, input: ConnectionRequestInput): Promise<ConnectionResponse> {
+      return bridge.request<ConnectionResponse>("POST", `/connections/${encodeURIComponent(connectionId)}/request`, {
+        method: input.method,
+        path: input.path,
+        ...(input.query ? { query: input.query } : {}),
+        ...(input.body === undefined ? {} : { body: input.body }),
+        ...(input.contentType ? { content_type: input.contentType } : {}),
+      });
+    },
   },
 
   hooks: {

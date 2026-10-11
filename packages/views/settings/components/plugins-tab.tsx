@@ -5,7 +5,7 @@ import { AppLink } from "../../navigation";
 
 import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, CalendarClock, Loader2, Trash2, Upload } from "lucide-react";
+import { AlertCircle, Cable, CalendarClock, Loader2, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useCurrentMember } from "@multica/core/permissions";
 import {
@@ -152,6 +152,8 @@ function scopeDescription(scope: string, t: Translate): string {
     case "members:read": return t(($) => $.plugins.scopes.members_read);
     case "storage:user": return t(($) => $.plugins.scopes.storage_user);
     case "storage:workspace": return t(($) => $.plugins.scopes.storage_workspace);
+    case "connections:read": return t(($) => $.plugins.scopes.connections_read);
+    case "connections:invoke": return t(($) => $.plugins.scopes.connections_invoke);
     default: return t(($) => $.plugins.scopes.unknown);
   }
 }
@@ -342,6 +344,7 @@ function PublishAndInstall({ wsId, canManage }: { wsId: string; canManage: boole
   const packages = useMemo(() => data?.packages ?? [], [data]);
   const scheduledHooks = (preview?.manifest.contributes?.hooks ?? [])
     .filter((hook) => hook.schedule !== undefined);
+  const requiredConnections = preview?.manifest.requires_connections ?? [];
 
   const reportError = (error: unknown) => {
     toast.error(error instanceof Error ? error.message : t(($) => $.plugins.action_failed));
@@ -457,6 +460,23 @@ function PublishAndInstall({ wsId, canManage }: { wsId: string; canManage: boole
             </Alert>
 
             <ScopeList scopes={preview.scopes} highlighted={preview.added_scopes} />
+
+            {requiredConnections.length > 0 ? (
+              <Alert>
+                <Cable />
+                <AlertTitle>{t(($) => $.plugins.connections.consent_title)}</AlertTitle>
+                <AlertDescription>
+                  {t(($) => $.plugins.connections.consent_description)}
+                  <ul className="mt-2 space-y-1.5">
+                    {requiredConnections.map((key) => (
+                      <li key={key} className="flex items-baseline gap-2 text-caption">
+                        <code className="shrink-0 rounded-xs bg-muted px-1.5 py-0.5 font-mono">{key}</code>
+                      </li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            ) : null}
 
             {scheduledHooks.length > 0 ? (
               <Alert>
