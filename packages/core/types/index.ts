@@ -116,6 +116,25 @@ export type {
   PluginMCPTool,
   PluginTokenIssue,
 } from "./plugin";
+export type {
+  Connection,
+  ConnectionBinding,
+  ConnectionBindingListResponse,
+  ConnectionBindingResponse,
+  ConnectionConfigField,
+  ConnectionConsumerType,
+  ConnectionLevel,
+  ConnectionListResponse,
+  ConnectionProvider,
+  ConnectionProviderListResponse,
+  ConnectionResponse,
+  ConnectionSecretMode,
+  ConnectionStatus,
+  CreateConnectionRequest,
+  UpdateConnectionRequest,
+  SetConnectionSecretRequest,
+  BindConnectionRequest,
+} from "./connection";
 export type { InboxItem, InboxSeverity, InboxItemType, InboxWorkspaceUnread, ArchivedInboxPage, ArchivedInboxFacets } from "./inbox";
 export type { NotificationGroupKey, NotificationGroupValue, NotificationPreferences, NotificationPreferenceResponse } from "./notification-preference";
 export type { Comment, CommentType, CommentAuthorType, CommentSupplementReceipt, CommentSupplementStatus, CommentTriggerPreview, CommentTriggerPreviewAgent, CommentTriggerSource, CommentTriggerOutcome, CommentTriggerStatus, Reaction } from "./comment";

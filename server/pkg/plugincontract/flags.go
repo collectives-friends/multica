@@ -50,6 +50,21 @@ func rejectV2Fields(raw []byte) error {
 	return json.Unmarshal(raw, &fields)
 }
 
+// version3Field rejects presence of a v3 field on an older manifest, with the
+// same presence-not-value semantics as version2Field.
+type version3Field struct{}
+
+func (version3Field) UnmarshalJSON([]byte) error {
+	return fmt.Errorf("requires_connections requires manifest_version 3")
+}
+
+func rejectV3Fields(raw []byte) error {
+	var fields struct {
+		RequiresConnections version3Field `json:"requires_connections"`
+	}
+	return json.Unmarshal(raw, &fields)
+}
+
 func (m Manifest) usesFlags() bool {
 	if len(m.Contributes.Flags) > 0 {
 		return true
@@ -82,8 +97,8 @@ func (m Manifest) ValidateFlagReferences(publicHostKeys map[string]bool) error {
 }
 
 func (m Manifest) validateFlags(isPublicHost func(string) bool) error {
-	if m.ManifestVersion != ManifestVersion1 && m.ManifestVersion != ManifestVersion2 {
-		return fmt.Errorf("unsupported manifest_version %d (supported: 1, 2)", m.ManifestVersion)
+	if m.ManifestVersion != ManifestVersion1 && m.ManifestVersion != ManifestVersion2 && m.ManifestVersion != ManifestVersion3 {
+		return fmt.Errorf("unsupported manifest_version %d (supported: 1, 2, 3)", m.ManifestVersion)
 	}
 	if m.ManifestVersion == ManifestVersion1 && (m.Contributes.Flags != nil || m.usesFlags()) {
 		return fmt.Errorf("flags and requires_flag require manifest_version 2")

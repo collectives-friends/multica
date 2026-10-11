@@ -406,7 +406,8 @@
       "code": "Code",
       "channels": "Messaging",
       "apps": "Connected apps",
-      "features": "Features"
+      "features": "Features",
+      "connections": "Connections"
     },
     "groups": {
       "personal": "Personal",
@@ -490,7 +491,9 @@
       "unknown": "Unrecognized access — do not install",
       "projects_read": "Read workspace projects",
       "projects_write": "Create and update workspace projects",
-      "installation_read": "Verify installation and invoking member permissions"
+      "installation_read": "Verify installation and invoking member permissions",
+      "connections_read": "See connections the workspace bound to this Plugin",
+      "connections_invoke": "Use a bound connection through the host (the credential is never shared)"
     },
     "hook_circuit_open": "Hook delivery has stopped after repeated failures.",
     "hook_recent_failures": "{{count}} recent hook calls failed.",
@@ -515,6 +518,11 @@
       "installed_version": "In use",
       "review_install": "Review and install",
       "review_upgrade": "Review and upgrade"
+    },
+    "connections": {
+      "title": "Connections",
+      "consent_title": "This Plugin needs a connection",
+      "consent_description": "After installing, an administrator binds a workspace connection to this Plugin in Settings → Connections. Until then the Plugin cannot use it."
     }
   },
   "properties": {
@@ -1483,5 +1491,84 @@
     "forced_off": "Forced off",
     "workspace_default": "Workspace default: {{state}}",
     "off_parent": "Off (parent)"
+  },
+  "connections": {
+    "title": "Connections",
+    "description": "Shared credentials for external systems, usable by plugins, agents and native modules.",
+    "loading": "Loading connections",
+    "load_failed": "Connections couldn't be loaded",
+    "load_failed_description": "Try again. Existing connections are unaffected.",
+    "empty": "No connections yet.",
+    "action_failed": "Connection action failed",
+    "enabled": "Connection enabled",
+    "disabled": "Connection disabled",
+    "enabled_label": "Enable connection",
+    "test": "Test connection",
+    "test_ok": "Connection verified",
+    "test_failed": "Connection test failed",
+    "delete": "Delete connection",
+    "deleted": "Connection deleted",
+    "reaches": "Reaches {{domains}}",
+    "status": {
+      "unchecked": "Not verified",
+      "ok": "Verified",
+      "degraded": "Degraded",
+      "error": "Failed",
+      "needs_reauth": "Credential rejected"
+    },
+    "level": {
+      "instance": "Deployment"
+    },
+    "installed": {
+      "title": "Connections"
+    },
+    "create": {
+      "title": "Add connection",
+      "provider": "System",
+      "name": "Name",
+      "name_placeholder": "Attio production",
+      "environment_production": "Production",
+      "environment_fixture": "Fixture",
+      "secret_mode": "Credential storage",
+      "secret_mode_host": "Stored in Multica (encrypted)",
+      "secret_mode_reference": "External reference (secret manager)",
+      "submit": "Create",
+      "created": "Connection created"
+    },
+    "secret": {
+      "title": "Credential",
+      "save": "Save",
+      "remove": "Remove",
+      "saved": "Credential saved",
+      "removed": "Credential removed",
+      "configured": "Configured",
+      "not_configured": "Not configured",
+      "host_hint": "Stored encrypted and never shown again.",
+      "reference_hint": "A pointer your deployment resolves; the value never enters Multica.",
+      "placeholder": "Paste the credential",
+      "placeholder_set": "Stored — paste to replace",
+      "reference_placeholder": "e.g. vault-name/secret-name"
+    },
+    "config": {
+      "title": "Configuration",
+      "name": "Name",
+      "environment": "Environment",
+      "save": "Save",
+      "saved": "Configuration saved",
+      "revision_conflict": "Someone else changed this connection. Reload and try again."
+    },
+    "bindings": {
+      "title": "Allowed users",
+      "empty": "No consumers are allowed yet.",
+      "consumer_id_placeholder": "Consumer ID",
+      "bind": "Allow",
+      "unbind": "Revoke",
+      "bound": "Consumer allowed",
+      "unbound": "Consumer revoked",
+      "plugin_installation": "Plugin",
+      "agent": "Agent",
+      "native": "Native module",
+      "choose": "Select…"
+    }
   }
 }

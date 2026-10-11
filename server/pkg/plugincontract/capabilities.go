@@ -15,6 +15,7 @@ import (
 // Flip an entry on in the same change that lands its runtime.
 type Capabilities struct {
 	Flags         bool
+	Connections   bool
 	SurfaceTypes  map[string]bool
 	HookTriggers  map[string]bool
 	HookTransport map[string]bool
@@ -29,6 +30,10 @@ type Capabilities struct {
 func HostCapabilities() Capabilities {
 	return Capabilities{
 		Flags: true,
+		// requires_connections lands with the connection registry; the flag
+		// turns on in the same change that ships the invoke API, which is what
+		// lets this stay a truthful statement about the build.
+		Connections: true,
 		// issue_panel mounts in PluginPanelSection; modal opens from a manual
 		// hook action. sidebar_panel stays off — it has no host location, and
 		// enabling a surface the host cannot render installs a plugin that
@@ -78,6 +83,9 @@ func (m Manifest) CheckCapabilities(host Capabilities) error {
 	missing := map[string]bool{}
 	if m.usesFlags() && !host.Flags {
 		missing["flags"] = true
+	}
+	if m.usesConnections() && !host.Connections {
+		missing["connections"] = true
 	}
 	for _, surface := range m.Contributes.Surfaces {
 		if !host.SurfaceTypes[surface.Type] {

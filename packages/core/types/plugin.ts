@@ -93,6 +93,12 @@ export interface PluginManifestSummary {
   description?: string;
   version: string;
   author: { name: string; url?: string };
+  /**
+   * Connection providers this Plugin declares it needs (manifest v3). An
+   * administrator still binds a workspace connection; the declaration is what
+   * the consent screen shows.
+   */
+  requires_connections?: string[];
   contributes?: {
     hooks?: Array<{
       key: string;

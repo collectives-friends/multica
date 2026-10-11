@@ -175,7 +175,7 @@ func TestParseManifestRejectsMalformedDocuments(t *testing.T) {
 		},
 		{
 			"wrong manifest version",
-			mutate(t, func(doc map[string]any) { doc["manifest_version"] = 3 }),
+			mutate(t, func(doc map[string]any) { doc["manifest_version"] = 4 }),
 			"manifest_version",
 		},
 		{
@@ -585,4 +585,89 @@ func TestEventSubscriptionRequiresTheMatchingReadScope(t *testing.T) {
 			}
 		})
 	}
+}
+
+// requires_connections is a v3 field. A v1 or v2 manifest carrying it must be
+// refused rather than silently ignored, because the declared connection is
+// part of what an administrator approves.
+func TestRequiresConnectionsIsVersionGatedAndValidated(t *testing.T) {
+	valid := func(version int, requires string) []byte {
+		return []byte(`{
+			"manifest_version": ` + itoa(version) + `,
+			"key": "com.example.connections",
+			"name": "Connections",
+			"version": "1.0.0",
+			"author": {"name": "example"},
+			"scopes": ["connections:read", "connections:invoke", "net:example.com"],
+			"requires_connections": ` + requires + `,
+			"contributes": {"surfaces": [{"key": "panel", "type": "settings_panel", "name": "Panel", "entry": "ui.js"}]}
+		}`)
+	}
+
+	cases := []struct {
+		name    string
+		raw     []byte
+		wantErr bool
+	}{
+		{"v3 accepts a known-shaped key", valid(3, `["attio"]`), false},
+		{"v3 accepts several keys", valid(3, `["attio", "generic-api-key"]`), false},
+		{"v2 refuses the field", valid(2, `["attio"]`), true},
+		{"v1 refuses the field", valid(1, `["attio"]`), true},
+		{"v3 rejects an invalid key", valid(3, `["Attio!"]`), true},
+		{"v3 rejects duplicates", valid(3, `["attio", "attio"]`), true},
+		{"v3 rejects an empty list entry", valid(3, `[""]`), true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			manifest, _, err := ParseManifest(tc.raw)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected a parse error, got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !manifest.usesConnections() {
+				t.Fatal("parsed manifest does not report its connection requirement")
+			}
+		})
+	}
+}
+
+func TestCheckCapabilitiesReportsMissingConnections(t *testing.T) {
+	manifest, _, err := ParseManifest([]byte(`{
+		"manifest_version": 3,
+		"key": "com.example.connections",
+		"name": "Connections",
+		"version": "1.0.0",
+		"author": {"name": "example"},
+		"scopes": ["connections:invoke"],
+		"requires_connections": ["attio"],
+		"contributes": {"surfaces": [{"key": "panel", "type": "settings_panel", "name": "Panel", "entry": "ui.js"}]}
+	}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	host := HostCapabilities()
+	host.Connections = false
+	if err := manifest.CheckCapabilities(host); err == nil {
+		t.Fatal("a host without the connections capability accepted a requires_connections manifest")
+	}
+	if err := manifest.CheckCapabilities(HostCapabilities()); err != nil {
+		t.Fatalf("this host ships connections and must accept it: %v", err)
+	}
+}
+
+func itoa(value int) string {
+	if value == 0 {
+		return "0"
+	}
+	digits := ""
+	for value > 0 {
+		digits = string(rune('0'+value%10)) + digits
+		value /= 10
+	}
+	return digits
 }

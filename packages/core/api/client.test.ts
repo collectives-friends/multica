@@ -3141,3 +3141,94 @@ describe("ApiClient shared credential across windows", () => {
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("ApiClient Connections", () => {
+  it("falls back to an empty list when the response is malformed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ connections: "nope" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    await expect(new ApiClient("https://api.example.test").listConnections("workspace-1"))
+      .resolves.toEqual({ connections: [], can_manage: false });
+  });
+
+  it("drops an unexpected credential field from the cached connection", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({
+          connection: {
+            id: "connection-1",
+            provider_key: "attio",
+            name: "Attio",
+            config: {},
+            configured_secrets: ["api_key"],
+            // A regression that echoed the value back must not reach the cache.
+            api_key: "sk-live-must-not-be-cached",
+          },
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    const connection = await new ApiClient("https://api.example.test")
+      .getConnection("workspace-1", "connection-1");
+    expect(connection.id).toBe("connection-1");
+    expect(connection).not.toHaveProperty("api_key");
+  });
+
+  it("writes a secret to the secret route and never into the config body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ connection: { id: "connection-1" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new ApiClient("https://api.example.test").setConnectionSecret(
+      "workspace-1",
+      "connection-1",
+      { key: "api_key", value: "sk-live" },
+    );
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/workspaces/workspace-1/connections/connection-1/secret",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      method: "PUT",
+      body: JSON.stringify({ key: "api_key", value: "sk-live" }),
+    });
+  });
+
+  it("binds a consumer through the bindings route", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        binding: { id: "binding-1", consumer_type: "agent", consumer_id: "agent-1", enabled: true, created_at: "" },
+      }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const binding = await new ApiClient("https://api.example.test").bindConnection(
+      "workspace-1",
+      "connection-1",
+      { consumer_type: "agent", consumer_id: "agent-1" },
+    );
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/workspaces/workspace-1/connections/connection-1/bindings",
+    );
+    expect(binding.consumer_id).toBe("agent-1");
+  });
+});

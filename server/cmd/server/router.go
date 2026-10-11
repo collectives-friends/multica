@@ -109,6 +109,8 @@ func registerPluginActionRoutes(r chi.Router, h *handler.Handler) {
 	r.Patch(publicapiv1.PathProject, h.PatchPluginProject)
 	r.Put(publicapiv1.PathPluginProjectProperties, h.UpsertPluginProjectProperty)
 	r.Get(publicapiv1.PathContext, h.GetPluginContext)
+	r.Get(publicapiv1.PathConnections, h.ListPluginConnections)
+	r.Post(publicapiv1.PathConnectionRequest, h.InvokePluginConnection)
 	r.Get(publicapiv1.PathIssue, h.GetPluginIssue)
 	r.Patch(publicapiv1.PathIssue, h.PatchPluginIssue)
 	r.Get(publicapiv1.PathIssueComments, h.ListPluginComments)
@@ -1344,6 +1346,24 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		slog.Info("Plugin secrets disabled (MULTICA_PLUGIN_SECRET_KEY not set)")
 	}
 
+	// Connection secrets. A dedicated key isolates rotation; the plugin key is
+	// accepted as a fallback so an existing deployment gets the feature without
+	// provisioning a new secret first, and operators can split them later.
+	if h.ConnectionService != nil {
+		connectionKey, err := secretbox.LoadKey("MULTICA_CONNECTION_SECRET_KEY")
+		if err != nil {
+			connectionKey, err = secretbox.LoadKey("MULTICA_PLUGIN_SECRET_KEY")
+		}
+		if err != nil {
+			slog.Info("connection secrets disabled (MULTICA_CONNECTION_SECRET_KEY and MULTICA_PLUGIN_SECRET_KEY not set)")
+		} else if box, err := secretbox.New(connectionKey); err != nil {
+			slog.Error("connections: secretbox.New failed; connection secrets disabled", "error", err)
+		} else {
+			h.ConnectionService.Secrets = box
+			slog.Info("connection secret encryption enabled")
+		}
+	}
+
 	// Hook engine. Event-triggered hooks are dispatched off the bus onto a
 	// worker pool: Bus.Publish runs listeners inline on the publishing request's
 	// goroutine, so anything that dials a third-party endpoint from there would
@@ -1746,6 +1766,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// because opening an issue is what asks for it; executable
 					// bytes stay off the authenticated app/API origin.
 					r.Get("/plugins/{installationId}/surfaces/{surfaceKey}/launch", h.GetPluginSurfaceLaunch)
+					// Connections are member-visible without their secrets so
+					// anyone can see which systems the workspace is wired to;
+					// create/configure/delete stay admin-only below.
+					r.Get("/connections/providers", h.ListConnectionProviders)
+					r.Get("/connections", h.ListConnections)
+					r.Get("/connections/{connectionId}", h.GetConnection)
+					r.Get("/connections/{connectionId}/bindings", h.ListConnectionBindings)
 				})
 				// Admin-level access
 				r.Group(func(r chi.Router) {
@@ -1799,6 +1826,20 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/plugins/{installationId}/enable", h.EnablePlugin)
 					r.Post("/plugins/{installationId}/disable", h.DisablePlugin)
 					r.Delete("/plugins/{installationId}", h.UninstallPlugin)
+					// Connection administration. A connection is a shared
+					// credential, so every write is an admin action; the
+					// secret itself is written by its own endpoint so it is
+					// never part of a config payload.
+					r.Post("/connections", h.CreateConnection)
+					r.Patch("/connections/{connectionId}", h.UpdateConnection)
+					r.Delete("/connections/{connectionId}", h.DeleteConnection)
+					r.Put("/connections/{connectionId}/secret", h.SetConnectionSecret)
+					r.Delete("/connections/{connectionId}/secret/{key}", h.DeleteConnectionSecret)
+					r.Post("/connections/{connectionId}/test", h.TestConnection)
+					r.Post("/connections/{connectionId}/enable", h.EnableConnection)
+					r.Post("/connections/{connectionId}/disable", h.DisableConnection)
+					r.Post("/connections/{connectionId}/bindings", h.BindConnection)
+					r.Delete("/connections/{connectionId}/bindings/{consumerType}/{consumerId}", h.UnbindConnection)
 				})
 				// Owner-only access
 				r.With(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner")).Delete("/", h.DeleteWorkspace)

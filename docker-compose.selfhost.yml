@@ -142,6 +142,12 @@ services:
       MULTICA_PLUGIN_SURFACE_ORIGIN: ${MULTICA_PLUGIN_SURFACE_ORIGIN:-}
       MULTICA_PLUGIN_API_URL: ${MULTICA_PLUGIN_API_URL:-}
       MULTICA_PLUGIN_DIR: ${MULTICA_PLUGIN_DIR:-}
+      # Workspace connections (Settings -> Connections). A base64-encoded
+      # 32-byte key that encrypts host-mode connection credentials at rest;
+      # without it, storing one fails closed. Falls back to
+      # MULTICA_PLUGIN_SECRET_KEY when unset, but a dedicated key gives
+      # connections an isolated rotation and blast radius.
+      MULTICA_CONNECTION_SECRET_KEY: ${MULTICA_CONNECTION_SECRET_KEY:-}
       # Optional API URL shown in self-host daemon setup commands. Set this
       # when the daemon reaches the API through a different URL than the one
       # used for public webhook URLs; otherwise MULTICA_PUBLIC_URL is used.
