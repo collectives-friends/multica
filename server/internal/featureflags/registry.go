@@ -120,6 +120,7 @@ func builtinDefinitions() []Definition {
 	return []Definition{
 		{Key: BillingWorkspaceSubscriptions, Label: "Workspace subscriptions", Description: "Workspace billing and subscription management.", Group: "Workspace", Public: true},
 		{Key: ComposioMCPApps, Label: "Connected apps", Description: "Manage Composio apps and their agent access.", Group: "Integrations", Public: true},
+		{Key: ConnectionsV1, Label: "Connections", Description: "Maintain workspace connections to external systems and let plugins use them.", Group: "Integrations", Parent: PluginsV1, Public: true},
 		{Key: PluginIntegrationsV1, Label: "Plugin integrations", Description: "Workspace and project integration surfaces and project API.", Group: "Integrations", Parent: PluginsV1, Public: true},
 		{Key: PluginsV1, Label: "Plugins", Description: "Install and run workspace plugins.", Group: "Integrations", Public: true},
 		{Key: TriageV1, Label: "Triage", Description: "Reserved compatibility flag; this build has no active triage gate.", Group: "Compatibility"},
