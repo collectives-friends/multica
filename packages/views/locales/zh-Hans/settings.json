@@ -484,7 +484,10 @@
       "storage_user": "为每位成员单独存储数据",
       "storage_workspace": "存储工作区共享数据",
       "net": "向 {{domain}} 发送数据",
-      "unknown": "无法识别的权限 — 请勿安装"
+      "unknown": "无法识别的权限 — 请勿安装",
+      "projects_read": "Read workspace projects",
+      "projects_write": "Create and update workspace projects",
+      "installation_read": "Verify installation and invoking member permissions"
     },
     "hook_circuit_open": "连续失败后已停止投递该 hook。",
     "hook_recent_failures": "最近有 {{count}} 次 hook 调用失败。",

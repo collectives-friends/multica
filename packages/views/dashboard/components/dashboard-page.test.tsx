@@ -1,3 +1,4 @@
+vi.mock("../../plugins/plugin-panel-section", () => ({ PluginPanelSection: () => null }));
 import { useMemo, useState } from "react";
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { cleanup, screen, within } from "@testing-library/react";

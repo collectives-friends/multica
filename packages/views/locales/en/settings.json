@@ -487,7 +487,10 @@
       "storage_user": "Store data for each member individually",
       "storage_workspace": "Store data shared by the workspace",
       "net": "Send data to {{domain}}",
-      "unknown": "Unrecognized access — do not install"
+      "unknown": "Unrecognized access — do not install",
+      "projects_read": "Read workspace projects",
+      "projects_write": "Create and update workspace projects",
+      "installation_read": "Verify installation and invoking member permissions"
     },
     "hook_circuit_open": "Hook delivery has stopped after repeated failures.",
     "hook_recent_failures": "{{count}} recent hook calls failed.",

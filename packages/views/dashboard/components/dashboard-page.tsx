@@ -1,5 +1,7 @@
 "use client";
 
+import { PluginPanelSection } from "../../plugins";
+
 import { useMemo, useState } from "react";
 import { BarChart3, RefreshCw } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -615,6 +617,8 @@ export function DashboardPage() {
               </>
             )}
           </TabsContent>
+
+          <PluginPanelSection surfaceType="workspace_panel" />
 
           <TabsContent value="errors">
             {errorsLoading ? (

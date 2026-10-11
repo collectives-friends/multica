@@ -484,7 +484,10 @@
       "storage_user": "멤버별로 데이터 저장",
       "storage_workspace": "워크스페이스 공유 데이터 저장",
       "net": "{{domain}}(으)로 데이터 전송",
-      "unknown": "알 수 없는 권한 — 설치하지 마세요"
+      "unknown": "알 수 없는 권한 — 설치하지 마세요",
+      "projects_read": "Read workspace projects",
+      "projects_write": "Create and update workspace projects",
+      "installation_read": "Verify installation and invoking member permissions"
     },
     "hook_circuit_open": "반복 실패로 훅 전달이 중단되었습니다.",
     "hook_recent_failures": "최근 훅 호출 {{count}}건이 실패했습니다.",

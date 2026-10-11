@@ -3,6 +3,7 @@ package publicapiv1
 // Context is Plugin-specific bootstrap data. It lives in the versioned
 // contract package so service-layer fields cannot leak into the wire format.
 type Context struct {
+	Project           *ContextProject  `json:"project,omitempty"`
 	Flags             map[string]bool  `json:"flags"`
 	Workspace         ContextWorkspace `json:"workspace"`
 	User              *ContextUser     `json:"user,omitempty"`
@@ -10,6 +11,11 @@ type Context struct {
 	Config            map[string]any   `json:"config"`
 	GrantedNetDomains []string         `json:"granted_net_domains"`
 	Actor             string           `json:"actor"`
+}
+
+type ContextProject struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
 }
 
 type ContextWorkspace struct {

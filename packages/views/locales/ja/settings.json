@@ -484,7 +484,10 @@
       "storage_user": "メンバーごとにデータを保存する",
       "storage_workspace": "ワークスペース共有のデータを保存する",
       "net": "{{domain}} にデータを送信する",
-      "unknown": "認識できない権限です — インストールしないでください"
+      "unknown": "認識できない権限です — インストールしないでください",
+      "projects_read": "Read workspace projects",
+      "projects_write": "Create and update workspace projects",
+      "installation_read": "Verify installation and invoking member permissions"
     },
     "hook_circuit_open": "連続失敗のためフックの配信を停止しました。",
     "hook_recent_failures": "最近 {{count}} 件のフック呼び出しが失敗しました。",

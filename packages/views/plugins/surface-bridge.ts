@@ -25,6 +25,7 @@ type BridgeRequest =
 /** Paths a surface may name. Anything else is refused before it reaches fetch. */
 const ALLOWED_PATHS: RegExp[] = [
   /^\/context$/,
+  /^\/projects(?:\/[^/]+)?$/,
   /^\/issues\/[^/]+$/,
   /^\/issues\/[^/]+\/comments$/,
   /^\/storage\/(workspace|user)$/,
@@ -65,6 +66,7 @@ export interface SurfaceBridgeOptions {
   bridgeToken: string;
   /** Mounted-on issue, forwarded to /context so the surface knows where it is. */
   issueId?: string;
+  projectId?: string;
   onResize?: (height: number) => void;
 }
 
@@ -107,6 +109,7 @@ export function createSurfaceBridge(options: SurfaceBridgeOptions): SurfaceBridg
         path: request.path,
         body: request.body,
         issueId: options.issueId,
+        ...(options.projectId ? { projectId: options.projectId } : {}),
         surfaceKey: options.surfaceKey,
       });
       port.postMessage({ id: request.id, ok: true, status: 200, data: result });
@@ -156,6 +159,7 @@ export function createSurfaceBridge(options: SurfaceBridgeOptions): SurfaceBridg
           method: "GET",
           path: "/context",
           issueId: options.issueId,
+        ...(options.projectId ? { projectId: options.projectId } : {}),
           ...(options.surfaceKey ? { surfaceKey: options.surfaceKey } : {}),
         });
         const context = parsePluginContextFlags(raw);

@@ -1,5 +1,7 @@
 "use client";
 
+import { PluginPanelSection } from "../../plugins";
+
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { Check, ChevronRight, Link2, MoreHorizontal, PanelRight, Pin, PinOff, Trash2, UserMinus } from "lucide-react";
@@ -470,6 +472,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
 
       {/* Resources */}
       <ProjectResourcesSection projectId={projectId} />
+      <PluginPanelSection projectId={projectId} surfaceType="project_panel" />
     </div>
   );
 

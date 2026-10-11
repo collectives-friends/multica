@@ -760,7 +760,9 @@ func (s *PluginService) SetEnabled(ctx context.Context, installation db.PluginIn
 	return updated, nil
 }
 
-// Uninstall removes the installation and all of its application-owned rows.
+// Uninstall removes the installation and its runtime rows. Project operation
+// receipts are retained as immutable mutation history, inaccessible to a new
+// installation; neither projects nor receipts are deleted by uninstall.
 // There are no foreign keys or cascades by repository policy, so the deletes
 // share one transaction: a partial uninstall would strand rows nothing can
 // reach or clean up later.

@@ -1299,6 +1299,13 @@ type PluginPackageVersion struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type PluginProjectOperation struct {
+	InstallationID pgtype.UUID `json:"installation_id"`
+	OperationID    pgtype.UUID `json:"operation_id"`
+	Request        []byte      `json:"request"`
+	Response       []byte      `json:"response"`
+}
+
 type PluginSecret struct {
 	ID             pgtype.UUID        `json:"id"`
 	InstallationID pgtype.UUID        `json:"installation_id"`
@@ -1333,6 +1340,7 @@ type Project struct {
 	Priority    string             `json:"priority"`
 	StartDate   pgtype.Date        `json:"start_date"`
 	DueDate     pgtype.Date        `json:"due_date"`
+	Revision    int64              `json:"revision"`
 }
 
 type ProjectResource struct {

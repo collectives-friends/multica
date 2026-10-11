@@ -34,8 +34,11 @@ func HostCapabilities() Capabilities {
 		// enabling a surface the host cannot render installs a plugin that
 		// silently never appears, which is precisely what this gate prevents.
 		SurfaceTypes: map[string]bool{
-			SurfaceIssuePanel: true,
-			SurfaceModal:      true,
+			SurfaceSettingsPanel:  true,
+			SurfaceWorkspacePanel: true,
+			SurfaceProjectPanel:   true,
+			SurfaceIssuePanel:     true,
+			SurfaceModal:          true,
 		},
 		// The agent trigger is not a call site the host drives: the hook is
 		// offered to an agent as an MCP tool and the agent decides. The

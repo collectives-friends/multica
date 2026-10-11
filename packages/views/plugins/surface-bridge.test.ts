@@ -159,3 +159,11 @@ it("binds surface identity to the mounted surface rather than guest input",async
   port.postMessage({id:"spoof",kind:"action",method:"GET",path:"/context",surfaceKey:"other-panel"});
   await vi.waitFor(()=>expect(mockCall).toHaveBeenCalledWith("installation-1",expect.objectContaining({surfaceKey:"own-panel"})));
 });
+
+it("binds project context to the mounted host frame", async () => {
+ const {port,posted,bridge} = connectedBridge({installationId:"installation-1",bridgeToken:TOKEN,projectId:"host-project"});
+ port.postMessage({id:"project",kind:"action",method:"GET",path:"/context",projectId:"spoofed-project"});
+ await answered(port,posted);
+ expect(mockCall).toHaveBeenCalledWith("installation-1",expect.objectContaining({projectId:"host-project"}));
+ bridge.close();
+});

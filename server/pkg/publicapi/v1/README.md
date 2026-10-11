@@ -53,3 +53,22 @@ the bridge. Projects, Members, Issue search/create/transition, Agents, Squads,
 Skills, Tasks/Runs, and Autopilots are subsequent vertical slices. Each slice
 adds its Public contract first, then explicitly opts the safe Plugin subset into
 the capability ledger.
+
+## Experimental project integrations
+
+The project endpoints are default-off behind `plugin_integrations_v1` (parent
+`plugins_v1`). They derive workspace and scopes from the installation. Callback
+credentials are excluded from project access; standing credentials and the
+session bridge are supported. POST `/projects` and PATCH `/projects/{project_id}`
+require a UUID `operation_id`, with `expected_revision` additionally required for
+PATCH. JSON description null clears the field; omission retains it. Only title,
+description and status may be written. Receipts and project mutations commit in
+one transaction under the lifecycle/flag lock and installation row lock. Every
+native project update advances a DB-maintained integer revision.
+
+GET `/installation/authorization` requires `installation:read`, returns fresh
+flag decisions, and is never cached. Callback responses attest current membership
+administration and the exact captured hook input. Standing responses cannot
+attest a human administrator. See the plugin SDK README for backend dispatch,
+revocation and unknown-outcome requirements. These are source capabilities;
+production deployment and activation remain separate acceptance steps.

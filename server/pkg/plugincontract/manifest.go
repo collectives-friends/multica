@@ -43,9 +43,12 @@ const (
 
 // Surface types. A surface is an iframe the host mounts at a fixed location.
 const (
-	SurfaceIssuePanel   = "issue_panel"
-	SurfaceSidebarPanel = "sidebar_panel"
-	SurfaceModal        = "modal"
+	SurfaceSettingsPanel  = "settings_panel"
+	SurfaceWorkspacePanel = "workspace_panel"
+	SurfaceProjectPanel   = "project_panel"
+	SurfaceIssuePanel     = "issue_panel"
+	SurfaceSidebarPanel   = "sidebar_panel"
+	SurfaceModal          = "modal"
 )
 
 // Hook triggers. Declaring a trigger says who may invoke the hook, never what
@@ -91,6 +94,9 @@ const (
 // Scopes. This list is complete and closed; anything else is rejected at parse
 // time. `net:<domain>` is the only parameterized form.
 const (
+	ScopeProjectsRead     = "projects:read"
+	ScopeProjectsWrite    = "projects:write"
+	ScopeInstallationRead = "installation:read"
 	ScopeIssuesRead       = "issues:read"
 	ScopeIssuesWrite      = "issues:write"
 	ScopeCommentsRead     = "comments:read"
@@ -119,6 +125,9 @@ const (
 )
 
 var fixedScopes = map[string]bool{
+	ScopeProjectsRead:     true,
+	ScopeProjectsWrite:    true,
+	ScopeInstallationRead: true,
 	ScopeIssuesRead:       true,
 	ScopeIssuesWrite:      true,
 	ScopeCommentsRead:     true,
@@ -592,7 +601,7 @@ func (m Manifest) validateContributions() error {
 		}
 		surfaceKeys[surface.Key] = true
 		switch surface.Type {
-		case SurfaceIssuePanel, SurfaceSidebarPanel, SurfaceModal:
+		case SurfaceIssuePanel, SurfaceSidebarPanel, SurfaceModal, SurfaceSettingsPanel, SurfaceWorkspacePanel, SurfaceProjectPanel:
 		default:
 			return fmt.Errorf("%s.type is unsupported: %q", field, surface.Type)
 		}

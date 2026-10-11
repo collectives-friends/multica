@@ -27,6 +27,7 @@ export interface PluginContext {
   workspace: { id: string; name: string; slug: string };
   user: { id: string; name: string };
   issue?: { id: string; identifier: string; title: string };
+  project?: { id: string; title: string };
   /** Non-secret installation configuration. Secrets never reach the frame. */
   config: Record<string, unknown>;
   /** Domains this installation was granted via `net:` scopes. */
@@ -43,6 +44,9 @@ export interface Issue {
   status: string;
   priority: string;
 }
+
+export interface Project { id: string; workspace_id: string; title: string; description: string | null; status: string; revision: number; }
+export interface ProjectWrite { operation_id: string; title?: string; description?: string | null; status?: "planned" | "in_progress" | "paused" | "completed" | "cancelled"; }
 
 export interface Comment {
   id: string;
@@ -263,6 +267,13 @@ export const multica = {
         parent_id: input.parentId,
       });
     },
+  },
+
+  projects: {
+    async list(): Promise<Project[]> { return (await bridge.request<{projects: Project[]}>("GET", "/projects")).projects; },
+    async get(id: string): Promise<Project> { return bridge.request<Project>("GET", `/projects/${encodeURIComponent(id)}`); },
+    async create(input: ProjectWrite & { title: string }): Promise<Project> { return bridge.request<Project>("POST", "/projects", input); },
+    async update(id: string, input: ProjectWrite & { expected_revision: number }): Promise<Project> { return bridge.request<Project>("PATCH", `/projects/${encodeURIComponent(id)}`, input); },
   },
 
   storage: {

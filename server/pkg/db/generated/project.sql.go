@@ -23,13 +23,52 @@ func (q *Queries) CountIssuesByProject(ctx context.Context, projectID pgtype.UUI
 	return count, err
 }
 
+const createPluginProject = `-- name: CreatePluginProject :one
+INSERT INTO project (workspace_id, title, description, status)
+VALUES ($1, $2, $3, $4) RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, revision
+`
+
+type CreatePluginProjectParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Title       string      `json:"title"`
+	Description pgtype.Text `json:"description"`
+	Status      string      `json:"status"`
+}
+
+func (q *Queries) CreatePluginProject(ctx context.Context, arg CreatePluginProjectParams) (Project, error) {
+	row := q.db.QueryRow(ctx, createPluginProject,
+		arg.WorkspaceID,
+		arg.Title,
+		arg.Description,
+		arg.Status,
+	)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Title,
+		&i.Description,
+		&i.Icon,
+		&i.Status,
+		&i.LeadType,
+		&i.LeadID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Priority,
+		&i.StartDate,
+		&i.DueDate,
+		&i.Revision,
+	)
+	return i, err
+}
+
 const createProject = `-- name: CreateProject :one
 INSERT INTO project (
     workspace_id, title, description, icon, status,
     lead_type, lead_id, priority, start_date, due_date
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
-) RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date
+) RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, revision
 `
 
 type CreateProjectParams struct {
@@ -73,6 +112,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.Priority,
 		&i.StartDate,
 		&i.DueDate,
+		&i.Revision,
 	)
 	return i, err
 }
@@ -92,8 +132,29 @@ func (q *Queries) DeleteProject(ctx context.Context, arg DeleteProjectParams) er
 	return err
 }
 
+const getPluginProjectOperation = `-- name: GetPluginProjectOperation :one
+SELECT request, response FROM plugin_project_operation WHERE installation_id = $1 AND operation_id = $2
+`
+
+type GetPluginProjectOperationParams struct {
+	InstallationID pgtype.UUID `json:"installation_id"`
+	OperationID    pgtype.UUID `json:"operation_id"`
+}
+
+type GetPluginProjectOperationRow struct {
+	Request  []byte `json:"request"`
+	Response []byte `json:"response"`
+}
+
+func (q *Queries) GetPluginProjectOperation(ctx context.Context, arg GetPluginProjectOperationParams) (GetPluginProjectOperationRow, error) {
+	row := q.db.QueryRow(ctx, getPluginProjectOperation, arg.InstallationID, arg.OperationID)
+	var i GetPluginProjectOperationRow
+	err := row.Scan(&i.Request, &i.Response)
+	return i, err
+}
+
 const getProjectInWorkspace = `-- name: GetProjectInWorkspace :one
-SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date FROM project
+SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, revision FROM project
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -119,6 +180,7 @@ func (q *Queries) GetProjectInWorkspace(ctx context.Context, arg GetProjectInWor
 		&i.Priority,
 		&i.StartDate,
 		&i.DueDate,
+		&i.Revision,
 	)
 	return i, err
 }
@@ -165,8 +227,29 @@ func (q *Queries) GetProjectIssueStats(ctx context.Context, arg GetProjectIssueS
 	return items, nil
 }
 
+const insertPluginProjectOperation = `-- name: InsertPluginProjectOperation :exec
+INSERT INTO plugin_project_operation (installation_id, operation_id, request, response) VALUES ($1,$2,$3,$4)
+`
+
+type InsertPluginProjectOperationParams struct {
+	InstallationID pgtype.UUID `json:"installation_id"`
+	OperationID    pgtype.UUID `json:"operation_id"`
+	Request        []byte      `json:"request"`
+	Response       []byte      `json:"response"`
+}
+
+func (q *Queries) InsertPluginProjectOperation(ctx context.Context, arg InsertPluginProjectOperationParams) error {
+	_, err := q.db.Exec(ctx, insertPluginProjectOperation,
+		arg.InstallationID,
+		arg.OperationID,
+		arg.Request,
+		arg.Response,
+	)
+	return err
+}
+
 const listProjects = `-- name: ListProjects :many
-SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date FROM project
+SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, revision FROM project
 WHERE workspace_id = $1
   AND ($2::text IS NULL OR status = $2)
   AND ($3::text IS NULL OR priority = $3)
@@ -202,6 +285,7 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]P
 			&i.Priority,
 			&i.StartDate,
 			&i.DueDate,
+			&i.Revision,
 		); err != nil {
 			return nil, err
 		}
@@ -211,6 +295,17 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]P
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockPluginInstallationForProject = `-- name: LockPluginInstallationForProject :one
+SELECT id FROM plugin_installation WHERE id = $1 AND enabled FOR SHARE
+`
+
+func (q *Queries) LockPluginInstallationForProject(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockPluginInstallationForProject, id)
+	var id_2 pgtype.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
 }
 
 const lockProjectForChatSessionCreate = `-- name: LockProjectForChatSessionCreate :one
@@ -253,6 +348,54 @@ func (q *Queries) LockProjectForDelete(ctx context.Context, arg LockProjectForDe
 	return id, err
 }
 
+const patchPluginProject = `-- name: PatchPluginProject :one
+UPDATE project SET title = COALESCE($1, title),
+ description = CASE WHEN $2::boolean THEN $3::text ELSE description END,
+ status = COALESCE($4, status), updated_at = clock_timestamp()
+WHERE id = $5 AND workspace_id = $6
+ AND revision = $7 RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, revision
+`
+
+type PatchPluginProjectParams struct {
+	Title            pgtype.Text `json:"title"`
+	SetDescription   bool        `json:"set_description"`
+	Description      pgtype.Text `json:"description"`
+	Status           pgtype.Text `json:"status"`
+	ID               pgtype.UUID `json:"id"`
+	WorkspaceID      pgtype.UUID `json:"workspace_id"`
+	ExpectedRevision int64       `json:"expected_revision"`
+}
+
+func (q *Queries) PatchPluginProject(ctx context.Context, arg PatchPluginProjectParams) (Project, error) {
+	row := q.db.QueryRow(ctx, patchPluginProject,
+		arg.Title,
+		arg.SetDescription,
+		arg.Description,
+		arg.Status,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.ExpectedRevision,
+	)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Title,
+		&i.Description,
+		&i.Icon,
+		&i.Status,
+		&i.LeadType,
+		&i.LeadID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Priority,
+		&i.StartDate,
+		&i.DueDate,
+		&i.Revision,
+	)
+	return i, err
+}
+
 const updateProject = `-- name: UpdateProject :one
 UPDATE project SET
     title = COALESCE($2, title),
@@ -266,7 +409,7 @@ UPDATE project SET
     due_date = $10,
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date
+RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, revision
 `
 
 type UpdateProjectParams struct {
@@ -310,6 +453,7 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.Priority,
 		&i.StartDate,
 		&i.DueDate,
+		&i.Revision,
 	)
 	return i, err
 }

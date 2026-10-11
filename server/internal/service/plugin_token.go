@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -131,6 +132,7 @@ func hashToken(token string) string {
 type CallbackGrant struct {
 	InstallationID pgtype.UUID
 	WorkspaceID    pgtype.UUID
+	Input          json.RawMessage
 	HookKey        string
 	Trigger        string
 	// Actor is who the resulting writes belong to, decided when the hook was
@@ -180,7 +182,12 @@ func (c *CallbackTokens) Issue(ctx context.Context, invocation HookInvocation) (
 	}
 	token := callbackTokenPrefix + base64.RawURLEncoding.EncodeToString(raw)
 
+	input, err := json.Marshal(invocation.Input)
+	if err != nil {
+		return "", err
+	}
 	grant := CallbackGrant{
+		Input:          input,
 		InstallationID: invocation.Installation.ID,
 		WorkspaceID:    invocation.Installation.WorkspaceID,
 		HookKey:        invocation.Hook.Key,

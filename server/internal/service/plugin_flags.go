@@ -85,6 +85,13 @@ func (s *PluginService) ContributionActive(ctx context.Context, installation db.
 	if !resolver.EnabledFor(ctx, workspaceID, userID, featureflags.PluginsV1) {
 		return false
 	}
+	manifest, err := ParseInstallationManifest(installation)
+	if err != nil {
+		return false
+	}
+	if integrationManifest(manifest) && !resolver.EnabledFor(ctx, workspaceID, userID, featureflags.PluginIntegrationsV1) {
+		return false
+	}
 	if requiresFlag == "" {
 		return true
 	}
@@ -102,6 +109,9 @@ func (s *PluginService) ContributionFlags(ctx context.Context, installation db.P
 	resolver := s.flagResolver()
 	workspaceID := uuidString(installation.WorkspaceID)
 	refs := map[string]bool{featureflags.PluginsV1: true}
+	if integrationManifest(manifest) {
+		refs[featureflags.PluginIntegrationsV1] = true
+	}
 	reference := func(ref string) {
 		if key, ok := strings.CutPrefix(ref, "host:"); ok {
 			refs[key] = true
@@ -252,4 +262,20 @@ func clearPluginFlagOverrides(ctx context.Context, queries *db.Queries, installa
 
 func pluginUserFromContext(ctx context.Context) string {
 	return featureflag.EvalContextFrom(ctx).UserID
+}
+
+// Integration manifests cannot bypass the host gate by omitting requires_flag.
+func integrationManifest(m plugincontract.Manifest) bool {
+	for _, scope := range m.Scopes {
+		if scope == plugincontract.ScopeProjectsRead || scope == plugincontract.ScopeProjectsWrite || scope == plugincontract.ScopeInstallationRead {
+			return true
+		}
+	}
+	for _, surface := range m.Contributes.Surfaces {
+		switch surface.Type {
+		case plugincontract.SurfaceSettingsPanel, plugincontract.SurfaceWorkspacePanel, plugincontract.SurfaceProjectPanel:
+			return true
+		}
+	}
+	return false
 }

@@ -487,7 +487,10 @@
       "storage_user": "Stocker des données pour chaque membre séparément",
       "storage_workspace": "Stocker des données partagées par l'espace de travail",
       "net": "Envoyer des données vers {{domain}}",
-      "unknown": "Accès non reconnu — ne pas installer"
+      "unknown": "Accès non reconnu — ne pas installer",
+      "projects_read": "Read workspace projects",
+      "projects_write": "Create and update workspace projects",
+      "installation_read": "Verify installation and invoking member permissions"
     },
     "hook_circuit_open": "La distribution des hooks est arrêtée après des échecs répétés.",
     "hook_recent_failures": "{{count}} appels de hook récents ont échoué.",
