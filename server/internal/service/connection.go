@@ -732,18 +732,31 @@ func (s *ConnectionService) proxyWithCredential(ctx context.Context, provider Co
 		}
 	}
 
-	// Join with an explicit separator: the appended path can then only extend
-	// the path, never the scheme or host. The validated path always starts with
-	// "/", so trimming that one character leaves the URL identical. (Static
-	// analysis only recognizes the host as fixed when the separator is part of
-	// the concatenation.)
-	target := strings.TrimRight(provider.BaseURL, "/") + "/" + strings.TrimPrefix(path, "/")
-	if len(request.Query) > 0 {
-		target += "?" + request.Query.Encode()
+	// A provider API call routinely carries a query string, and the shared
+	// endpoint validator refuses any query by contract. Validate the endpoint
+	// without it — a query cannot change the scheme or host — and attach it
+	// afterwards. The same explicit join keeps the path from extending the
+	// host; the validated path always starts with "/", so trimming that one
+	// character leaves the URL identical.
+	basePath := path
+	rawQuery := ""
+	if index := strings.IndexByte(path, '?'); index >= 0 {
+		basePath, rawQuery = path[:index], path[index+1:]
 	}
+	target := strings.TrimRight(provider.BaseURL, "/") + "/" + strings.TrimPrefix(basePath, "/")
 	endpoint, err := s.validateOutboundEndpoint(ctx, target, provider.NetDomains)
 	if err != nil {
 		return ConnectionProxyResponse{}, connectionErrf(ConnectionErrorForbidden, "request target is not allowed")
+	}
+	// The caller may carry the query inside the path (as its provider client
+	// did before the proxy) or in the structured field; both end up here.
+	switch {
+	case rawQuery != "" && len(request.Query) > 0:
+		endpoint.RawQuery = rawQuery + "&" + request.Query.Encode()
+	case rawQuery != "":
+		endpoint.RawQuery = rawQuery
+	case len(request.Query) > 0:
+		endpoint.RawQuery = request.Query.Encode()
 	}
 	client := s.HTTPClient
 	if client == nil {
