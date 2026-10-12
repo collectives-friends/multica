@@ -94,6 +94,26 @@ func TestParseManifestAcceptsScheduledHook(t *testing.T) {
 	}
 }
 
+func TestParseManifestAcceptsHookTimeoutsUpToTheCredentialCeiling(t *testing.T) {
+	// A publish-sized hook legitimately runs for minutes, so the bound that
+	// stops it is the callback credential's own ceiling rather than a shorter
+	// call budget.
+	for _, timeout := range []int{100, 10000, 180000, 300000} {
+		raw := mutate(t, func(doc map[string]any) {
+			contributes := doc["contributes"].(map[string]any)
+			hooks := contributes["hooks"].([]any)
+			hooks[0].(map[string]any)["timeout_ms"] = timeout
+		})
+		manifest, _, err := ParseManifest(raw)
+		if err != nil {
+			t.Fatalf("ParseManifest rejected timeout_ms=%d: %v", timeout, err)
+		}
+		if got := manifest.Contributes.Hooks[0].TimeoutMs; got != timeout {
+			t.Fatalf("timeout_ms = %d, want %d", got, timeout)
+		}
+	}
+}
+
 func TestParseManifestValidatesScheduledHookContract(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -353,6 +373,24 @@ func TestParseManifestRejectsMalformedDocuments(t *testing.T) {
 				contributes["hooks"] = []any{hooks[0], clone}
 			}),
 			"duplicate hook key",
+		},
+		{
+			"hook timeout under the floor",
+			mutate(t, func(doc map[string]any) {
+				contributes := doc["contributes"].(map[string]any)
+				hooks := contributes["hooks"].([]any)
+				hooks[0].(map[string]any)["timeout_ms"] = 99
+			}),
+			"timeout_ms must be between 100 and 300000",
+		},
+		{
+			"hook timeout over the credential ceiling",
+			mutate(t, func(doc map[string]any) {
+				contributes := doc["contributes"].(map[string]any)
+				hooks := contributes["hooks"].([]any)
+				hooks[0].(map[string]any)["timeout_ms"] = 300001
+			}),
+			"timeout_ms must be between 100 and 300000",
 		},
 		{
 			"unsupported resource type",
