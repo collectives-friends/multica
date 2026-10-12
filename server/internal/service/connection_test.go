@@ -31,6 +31,9 @@ func TestBuiltinConnectionProviders_AttioIsProbeable(t *testing.T) {
 	if provider.Injection.Header != "Authorization" || provider.Injection.Scheme != "Bearer" {
 		t.Fatalf("attio injection = %+v, want Authorization: Bearer", provider.Injection)
 	}
+	if provider.BaseURL != "https://api.attio.com/v2" || provider.Health.URL != provider.BaseURL+"/self" {
+		t.Fatalf("attio base URL = %q and health URL = %q, want the versioned API root and its /self probe", provider.BaseURL, provider.Health.URL)
+	}
 }
 
 func TestConnectionProviderFor_UnknownKeyIsRejected(t *testing.T) {
