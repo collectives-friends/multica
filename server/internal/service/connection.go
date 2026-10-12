@@ -107,10 +107,10 @@ type ConnectionProvider struct {
 	Injection    CredentialInjection
 	Health       *ConnectionHealthCheck
 	Capabilities []string
-	// BaseURL is the provider's API root. It is fixed by code so a request
-	// through the host proxy cannot be pointed at another host; the caller
-	// only ever supplies a path. Empty means the provider has no proxyable
-	// API surface.
+	// BaseURL is the provider's API root, including any version prefix. It is
+	// fixed by code so a request through the host proxy cannot be pointed at
+	// another host; the caller only ever supplies a path. Empty means the
+	// provider has no proxyable API surface.
 	BaseURL string
 }
 
@@ -133,7 +133,7 @@ func BuiltinConnectionProviders() []ConnectionProvider {
 				ExpectStatus: http.StatusOK,
 			},
 			Capabilities: []string{"attio:read", "attio:write"},
-			BaseURL:      "https://api.attio.com",
+			BaseURL:      "https://api.attio.com/v2",
 		},
 		{
 			Key:         "generic-api-key",
