@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -245,6 +247,67 @@ func TestProxyWithCredential_AttachesCredentialAndReturnsResponse(t *testing.T) 
 	}
 	if seenPath != "/v2/records?limit=10" {
 		t.Fatalf("provider saw path %q", seenPath)
+	}
+}
+
+// The shared endpoint validator refuses any query string by contract, while a
+// provider list call routinely carries one. The proxy must validate the
+// query-less target and attach the query afterwards; this test fails if the
+// query is ever handed to the validator again.
+func TestProxyWithCredential_ValidatesWithoutQueryAndForwardsBothForms(t *testing.T) {
+	var validated []string
+	var seenPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenPath = r.URL.Path + "?" + r.URL.RawQuery
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("{}"))
+	}))
+	defer server.Close()
+
+	svc := &ConnectionService{
+		HTTPClient: server.Client(),
+		validateEndpoint: func(_ context.Context, raw string, _ []string) (*url.URL, error) {
+			validated = append(validated, raw)
+			parsed, err := url.Parse(raw)
+			if err != nil {
+				return nil, err
+			}
+			if parsed.RawQuery != "" || parsed.Fragment != "" {
+				return nil, fmt.Errorf("endpoint must be a public HTTPS URL without userinfo, query, or fragment")
+			}
+			return parsed, nil
+		},
+	}
+	provider := ConnectionProvider{Key: "test", BaseURL: server.URL}
+
+	if _, err := svc.proxyWithCredential(context.Background(), provider, "sk-test",
+		ConnectionProxyRequest{Method: http.MethodGet, Path: "/v2/objects/x/attributes?show_archived=true"}); err != nil {
+		t.Fatalf("path-embedded query: %v", err)
+	}
+	if seenPath != "/v2/objects/x/attributes?show_archived=true" {
+		t.Fatalf("provider saw %q, want the path-embedded query", seenPath)
+	}
+
+	if _, err := svc.proxyWithCredential(context.Background(), provider, "sk-test",
+		ConnectionProxyRequest{Method: http.MethodGet, Path: "/v2/records", Query: url.Values{"limit": {"10"}}}); err != nil {
+		t.Fatalf("structured query: %v", err)
+	}
+	if seenPath != "/v2/records?limit=10" {
+		t.Fatalf("provider saw %q, want the structured query", seenPath)
+	}
+
+	if _, err := svc.proxyWithCredential(context.Background(), provider, "sk-test",
+		ConnectionProxyRequest{Method: http.MethodGet, Path: "/v2/records?offset=5", Query: url.Values{"limit": {"10"}}}); err != nil {
+		t.Fatalf("combined query: %v", err)
+	}
+	if seenPath != "/v2/records?offset=5&limit=10" {
+		t.Fatalf("provider saw %q, want both query forms", seenPath)
+	}
+
+	for _, raw := range validated {
+		if strings.Contains(raw, "?") {
+			t.Fatalf("validator received a query: %q", raw)
+		}
 	}
 }
 
