@@ -196,7 +196,12 @@ class Bridge {
     else this.queued.push(request);
   }
 
-  async request<T>(method: BridgeMethod, path: string, body?: unknown): Promise<T> {
+  /**
+   * `timeoutMs` is the local watchdog for the answer, not a fact the host is
+   * told. A hook the manifest lets run for minutes answers late by design, so
+   * its caller raises the watchdog instead of reading a healthy call as failed.
+   */
+  async request<T>(method: BridgeMethod, path: string, body?: unknown, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
     await this.ready;
     const id = `r${++this.sequence}`;
     const request: BridgeRequest = { id, kind: "action", method, path, body };
@@ -204,7 +209,7 @@ class Bridge {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new MulticaPluginError(408, `Multica did not answer ${method} ${path} in time`));
-      }, DEFAULT_TIMEOUT_MS);
+      }, timeoutMs);
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
       this.port?.postMessage(request);
     });
@@ -351,14 +356,25 @@ export const multica = {
      *
      * The host refuses any hook this plugin's manifest did not declare with the
      * `ui` trigger.
+     *
+     * `options.timeoutMs` raises the local watchdog for the answer. Raise it
+     * for a hook the manifest may legitimately run for minutes: the host holds
+     * the invocation open for the hook's declared `timeout_ms` and answers when
+     * the plugin does, so the default would report a healthy call as a timeout
+     * the caller has to read back instead.
      */
-    async invoke(hookKey: string, input?: unknown): Promise<HookResult> {
+    async invoke(hookKey: string, input?: unknown, options?: { timeoutMs?: number }): Promise<HookResult> {
       const issue = (await multica.context.get()).issue;
-      return bridge.request<HookResult>("POST", `/hooks/${encodeURIComponent(hookKey)}`, {
-        trigger: "ui",
-        issue_id: issue?.id,
-        input,
-      });
+      return bridge.request<HookResult>(
+        "POST",
+        `/hooks/${encodeURIComponent(hookKey)}`,
+        {
+          trigger: "ui",
+          issue_id: issue?.id,
+          input,
+        },
+        options?.timeoutMs,
+      );
     },
   },
 

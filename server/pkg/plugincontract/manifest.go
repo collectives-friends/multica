@@ -774,8 +774,12 @@ func (m Manifest) validateContributions() error {
 		if err := m.validateHookTransport(field, hook.Transport); err != nil {
 			return err
 		}
-		if hook.TimeoutMs != 0 && (hook.TimeoutMs < 100 || hook.TimeoutMs > 30000) {
-			return fmt.Errorf("%s.timeout_ms must be between 100 and 30000", field)
+		// The host holds a synchronous hook open for this long and revokes the
+		// invocation's callback credential when it ends. The upper bound is that
+		// credential's own five-minute ceiling: a hook may legitimately run for
+		// minutes, but never past the authorization it runs under.
+		if hook.TimeoutMs != 0 && (hook.TimeoutMs < 100 || hook.TimeoutMs > 300000) {
+			return fmt.Errorf("%s.timeout_ms must be between 100 and 300000", field)
 		}
 	}
 

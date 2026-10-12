@@ -274,12 +274,20 @@ func (s *PluginService) callHookEndpoint(ctx context.Context, invocation HookInv
 		return nil, pluginErrf(PluginErrorForbidden, "this Plugin was granted no net: scope, so it cannot call out")
 	}
 
+	// The invocation window is the manifest timeout the admin consented to.
+	// One number drives the HTTP client, the request context and the callback
+	// credential that is revoked when the call ends.
+	timeout := hookDefaultTimeout
+	if invocation.Hook.TimeoutMs > 0 {
+		timeout = time.Duration(invocation.Hook.TimeoutMs) * time.Millisecond
+	}
+
 	// Two ways to reach an endpoint, and only the network guard differs between
 	// them. The consent check does not: a destination outside the granted `net:`
 	// set is refused on both paths, because that is what the admin approved and
 	// no deployment setting may widen it.
 	var endpoint *url.URL
-	client := &http.Client{}
+	client := &http.Client{Timeout: timeout}
 	if s.isDevOrigin(invocation.Hook.Transport.URL) {
 		// The operator named this exact origin in MULTICA_PLUGIN_DEV_ORIGINS —
 		// the same opt-in that lets a manifest be served from a local dev
@@ -306,6 +314,10 @@ func (s *PluginService) callHookEndpoint(ctx context.Context, invocation HookInv
 		// address, so a hostname that passed validation and then flipped to a
 		// private IP cannot be used to reach inside the network.
 		client = remotemcp.NewSecureHTTPClient(endpoint)
+		// It arrives carrying the MCP call budget; the consented invocation
+		// window replaces it, so a hook the manifest lets run for minutes is
+		// not cut short by the budget of a different kind of call.
+		client.Timeout = timeout
 	}
 
 	body, err := s.buildHookBody(ctx, invocation)
@@ -323,10 +335,6 @@ func (s *PluginService) callHookEndpoint(ctx context.Context, invocation HookInv
 		return nil, &PluginError{Kind: PluginErrorInvalid, Message: "encode hook request", Err: err}
 	}
 
-	timeout := hookDefaultTimeout
-	if invocation.Hook.TimeoutMs > 0 {
-		timeout = time.Duration(invocation.Hook.TimeoutMs) * time.Millisecond
-	}
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
