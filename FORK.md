@@ -58,6 +58,14 @@ Prerequisite: none — GitHub runs this repository's CI on pull requests
 (verified 2026-10-13 with `#16`: `changes`, `backend` and `frontend` passed and
 CodeQL ran).
 
+Token for workflow changes: GitHub refuses to let the default workflow token
+push changes under `.github/workflows/`, and upstream changes its own CI often.
+Set a repository secret `SYNC_TOKEN` — a **fine-grained** token scoped to this
+repository with **Contents: Read and write**, **Pull requests: Read and write**
+and **Workflows: Read and write** — and the sync uses it for checkout, push and
+PR. Without it, a sync that carries workflow changes fails with an actionable
+error instead of a raw git rejection, and the manual fallback below applies.
+
 Notes:
 
 - The PR is opened by `github-actions[bot]`. GitHub suppresses `pull_request`

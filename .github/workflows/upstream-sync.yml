@@ -4,6 +4,12 @@ name: Upstream sync
 # It never pushes to main and never merges its own PR; a conflicting merge
 # aborts and fails the run so the conflict is visible. The TC installation
 # pin in collectives-friends/tc-multica is bumped separately, after review.
+#
+# GitHub refuses to let the default workflow token push changes under
+# .github/workflows/, so this workflow uses the optional SYNC_TOKEN secret
+# when it must carry upstream workflow changes: a fine-grained token with
+# Contents: Read and write, Pull requests: Read and write and
+# Workflows: Read and write scoped to this repository.
 
 on:
   schedule:
@@ -28,8 +34,11 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN || github.token }}
       - name: Merge upstream main into a sync branch
         id: merge
+        env:
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
@@ -50,6 +59,12 @@ jobs:
             echo "::error::Upstream sync conflicts on $upstream_sha; resolve in a manual branch."
             exit 1
           fi
+          touched_workflows=$(git diff --name-only ORIG_HEAD HEAD | grep '^\.github/workflows/' || true)
+          if [ -n "$touched_workflows" ] && [ -z "${SYNC_TOKEN:-}" ]; then
+            echo "::error::This merge carries upstream workflow changes and no SYNC_TOKEN secret is configured; GitHub refuses workflow-file pushes with the default token. Add a fine-grained token with the Workflows permission as SYNC_TOKEN, or run the manual fallback in FORK.md."
+            printf '%s\n' "$touched_workflows"
+            exit 1
+          fi
           # The branch namespace is bot-owned and derived from the upstream
           # commit; a re-run refreshes the same proposal instead of failing.
           git fetch --quiet origin "$branch" || true
@@ -63,7 +78,7 @@ jobs:
       - name: Open the proposal PR
         if: steps.merge.outputs.state == 'merged'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN || secrets.GITHUB_TOKEN }}
           BRANCH: ${{ steps.merge.outputs.branch }}
           UPSTREAM: ${{ steps.merge.outputs.upstream }}
           BEHIND: ${{ steps.merge.outputs.behind }}
@@ -86,6 +101,6 @@ jobs:
       - name: Dispatch the fork CI on the proposal
         if: steps.merge.outputs.state == 'merged'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN || secrets.GITHUB_TOKEN }}
           BRANCH: ${{ steps.merge.outputs.branch }}
         run: gh workflow run ci.yml --ref "$BRANCH"
