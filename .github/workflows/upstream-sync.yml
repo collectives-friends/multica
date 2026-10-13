@@ -1,0 +1,91 @@
+name: Upstream sync
+
+# Weekly proposal that merges multica-ai/multica@main into this fork.
+# It never pushes to main and never merges its own PR; a conflicting merge
+# aborts and fails the run so the conflict is visible. The TC installation
+# pin in collectives-friends/tc-multica is bumped separately, after review.
+
+on:
+  schedule:
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out main
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - name: Merge upstream main into a sync branch
+        id: merge
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream https://github.com/multica-ai/multica.git
+          git fetch --quiet upstream main
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo 'Upstream main is already merged into this fork.'
+            echo 'state=current' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          upstream_sha=$(git rev-parse upstream/main)
+          behind=$(git rev-list --count HEAD..upstream/main)
+          branch="sync/upstream-$(git rev-parse --short "$upstream_sha")"
+          git switch -c "$branch"
+          if ! git merge --no-edit upstream/main; then
+            git merge --abort
+            echo "::error::Upstream sync conflicts on $upstream_sha; resolve in a manual branch."
+            exit 1
+          fi
+          # The branch namespace is bot-owned and derived from the upstream
+          # commit; a re-run refreshes the same proposal instead of failing.
+          git fetch --quiet origin "$branch" || true
+          git push --force-with-lease origin "$branch"
+          {
+            echo 'state=merged'
+            echo "branch=$branch"
+            echo "upstream=$upstream_sha"
+            echo "behind=$behind"
+          } >> "$GITHUB_OUTPUT"
+      - name: Open the proposal PR
+        if: steps.merge.outputs.state == 'merged'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.merge.outputs.branch }}
+          UPSTREAM: ${{ steps.merge.outputs.upstream }}
+          BEHIND: ${{ steps.merge.outputs.behind }}
+        run: |
+          set -euo pipefail
+          body=$(printf '%s\n' \
+            "Weekly merge of \`multica-ai/multica@main\` into the fork." \
+            '' \
+            "- upstream commit: \`$UPSTREAM\`" \
+            "- upstream commits merged: $BEHIND" \
+            '' \
+            'Review the diff, read any new upstream migrations, and merge when CI is green.' \
+            'CI for this branch is dispatched separately by the sync workflow (see the' \
+            'Actions tab); bumping the `tc-multica` pin is a separate PR.' \
+            '' \
+            'See [FORK.md](../blob/main/FORK.md) for the sync policy.')
+          gh pr create --base main --head "$BRANCH" \
+            --title "chore(sync): merge upstream main ($(date -u +%Y-%m-%d))" \
+            --body "$body" || echo 'A proposal PR for this branch already exists.'
+      - name: Dispatch the fork CI on the proposal
+        if: steps.merge.outputs.state == 'merged'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.merge.outputs.branch }}
+        run: gh workflow run ci.yml --ref "$BRANCH"
